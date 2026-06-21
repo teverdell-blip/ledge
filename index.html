@@ -117,24 +117,50 @@
     function parseRows(rawRows) {
       if (!rawRows.length) return [];
       var headers=Object.keys(rawRows[0]);
-      var dateCol=findCol(headers,["date","txndate","transactiondate","when"]);
-      var amtCol =findCol(headers,["amount","amt","value","debit","credit","sum"]);
-      var descCol=findCol(headers,["description","desc","details","memo","narrative","name","payee","merchant"]);
-      var catCol =findCol(headers,["category","cat","classification"]);
-      var typeCol=findCol(headers,["type","txntype","transactiontype","direction"]);
-      return rawRows
-        .filter(function(r){return amtCol&&r[amtCol]!==undefined&&r[amtCol]!==""&&r[amtCol]!==null;})
-        .map(function(r,i){
+
+      var dateCol  = findCol(headers,["effectivedate","date","txndate","transactiondate","when"]);
+      var descCol  = findCol(headers,["description","desc","longdescription","details","memo","narrative","payee","merchant"]);
+      var catCol   = findCol(headers,["category","cat","classification"]);
+      var typeCol  = findCol(headers,["transactiontype","type","txntype","direction"]);
+
+      // Detect separate debit/credit columns vs single amount column
+      var debitCol  = findCol(headers,["debitamount","debit"]);
+      var creditCol = findCol(headers,["creditamount","credit"]);
+      var amtCol    = (!debitCol && !creditCol) ? findCol(headers,["amount","amt","value","sum"]) : null;
+
+      var results=[];
+      rawRows.forEach(function(r,i){
+        var desc=descCol?String(r[descCol]||"").trim():"";
+        var category=catCol?String(r[catCol]||"").trim():"";
+        if (ALL_CATS.indexOf(category)<0) category=guessCategory(desc);
+        var date=normaliseDate(dateCol?r[dateCol]:"");
+
+        if (debitCol || creditCol) {
+          // Separate debit/credit columns — emit one row per non-empty value
+          var debit  = parseFloat(String(r[debitCol] ||"0").replace(/[^0-9.\-]/g,""));
+          var credit = parseFloat(String(r[creditCol]||"0").replace(/[^0-9.\-]/g,""));
+
+          if (!isNaN(debit) && debit > 0) {
+            var dCat = catCol && ALL_CATS.indexOf(String(r[catCol]||"").trim())>=0 ? String(r[catCol]).trim() : guessCategory(desc);
+            results.push({id:Date.now()+i*2, date:date, amount:debit,  type:"expense", category:dCat, desc:desc||"Imported transaction"});
+          }
+          if (!isNaN(credit) && credit > 0) {
+            var cCat = catCol && ALL_CATS.indexOf(String(r[catCol]||"").trim())>=0 ? String(r[catCol]).trim() : guessCategory(desc);
+            // Credits are most likely income unless description suggests otherwise
+            var cType = CATEGORIES.income.indexOf(cCat)>=0 ? "income" : "income";
+            results.push({id:Date.now()+i*2+1, date:date, amount:credit, type:"income",  category:cCat==="Other"?"Other Income":cCat, desc:desc||"Imported transaction"});
+          }
+        } else if (amtCol) {
+          // Single amount column
           var rawAmt=parseFloat(String(r[amtCol]||"0").replace(/[^0-9.\-]/g,""));
-          var amount=Math.abs(isNaN(rawAmt)?0:rawAmt);
-          var desc=descCol?String(r[descCol]||"").trim():"";
-          var category=catCol?String(r[catCol]||"").trim():"";
-          if (ALL_CATS.indexOf(category)<0) category=guessCategory(desc);
+          if (isNaN(rawAmt)||rawAmt===0) return;
+          var amount=Math.abs(rawAmt);
           var type=typeCol?String(r[typeCol]||"").toLowerCase():"";
           if (type!=="income"&&type!=="expense") type=rawAmt<0?"expense":(CATEGORIES.income.indexOf(category)>=0?"income":"expense");
-          return {id:Date.now()+i,date:normaliseDate(dateCol?r[dateCol]:""),amount:amount,desc:desc||"Imported transaction",category:category,type:type};
-        })
-        .filter(function(r){return r.amount>0;});
+          results.push({id:Date.now()+i, date:date, amount:amount, type:type, category:category, desc:desc||"Imported transaction"});
+        }
+      });
+      return results;
     }
 
     // ── derived ───────────────────────────────────────────────────────────────
