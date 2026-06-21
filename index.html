@@ -20,18 +20,18 @@
     ::-webkit-scrollbar-track { background: transparent; }
     ::-webkit-scrollbar-thumb { background: #334155; border-radius: 4px; }
     @keyframes ldp { 0%,80%,100%{opacity:.2} 40%{opacity:1} }
-    @keyframes spin { to { transform: rotate(360deg); } }
     .dot-1 { animation: ldp 1.2s ease-in-out 0s infinite; }
     .dot-2 { animation: ldp 1.2s ease-in-out 0.2s infinite; }
     .dot-3 { animation: ldp 1.2s ease-in-out 0.4s infinite; }
+    button { font-family: inherit; }
+    input, select { font-family: inherit; }
   </style>
 </head>
 <body>
   <div id="root"><div style="display:flex;align-items:center;justify-content:center;height:100vh;color:#6EE7C0;font-size:14px;">Loading…</div></div>
-
   <script src="https://cdn.jsdelivr.net/npm/xlsx/dist/xlsx.full.min.js"></script>
   <script>
-    // ── config ────────────────────────────────────────────────────────────────
+  (function() {
     const PROXY_URL   = "https://ledge-proxy.teverdell-blip.workers.dev";
     const STORAGE_KEY = "ledge_txns_v1";
 
@@ -40,13 +40,11 @@
       expense: ["Housing","Food","Transport","Health","Entertainment","Utilities","Shopping","Other"],
     };
     const ALL_CATS = [...CATEGORIES.income, ...CATEGORIES.expense];
-
     const CAT_COLORS = {
-      Salary:"#6EE7C0", Freelance:"#93C5FD", Investment:"#FCA5A5", "Other Income":"#C4B5FD",
-      Housing:"#F97316", Food:"#EAB308", Transport:"#3B82F6", Health:"#10B981",
-      Entertainment:"#8B5CF6", Utilities:"#6B7280", Shopping:"#EC4899", Other:"#9CA3AF",
+      Salary:"#6EE7C0",Freelance:"#93C5FD",Investment:"#FCA5A5","Other Income":"#C4B5FD",
+      Housing:"#F97316",Food:"#EAB308",Transport:"#3B82F6",Health:"#10B981",
+      Entertainment:"#8B5CF6",Utilities:"#6B7280",Shopping:"#EC4899",Other:"#9CA3AF",
     };
-
     const SEED = [
       {id:1,date:"2026-06-01",type:"income", category:"Salary",       desc:"June payroll",   amount:5800},
       {id:2,date:"2026-06-03",type:"expense",category:"Housing",      desc:"Rent",           amount:2100},
@@ -57,7 +55,6 @@
       {id:7,date:"2026-06-14",type:"expense",category:"Health",       desc:"Physio",         amount:120},
       {id:8,date:"2026-06-18",type:"expense",category:"Shopping",     desc:"Baby gear",      amount:340},
     ];
-
     const PROMPTS = [
       "Where am I spending the most?",
       "How's my savings rate?",
@@ -66,66 +63,39 @@
     ];
 
     // ── state ─────────────────────────────────────────────────────────────────
-    let state = {
-      view: "dashboard",
-      filter: "all",
-      txns: loadTxns(),
-      nextId: 1000,
-      form: { date: todayStr(), type:"expense", category:"Food", desc:"", amount:"" },
-      messages: [{role:"assistant",text:"Hi! I can see all your transactions. Ask me anything about your finances — spending patterns, savings tips, or where your money's going."}],
-      chatInput: "",
-      aiLoading: false,
-      aiError: "",
-      importStage: "idle",
-      importRows: [],
-      importEdits: {},
-      importError: "",
-      importMode: "append",
+    function todayStr() { return new Date().toISOString().split("T")[0]; }
+    function loadTxns() {
+      try { const r=localStorage.getItem(STORAGE_KEY); if(r) return JSON.parse(r); } catch(e){}
+      return SEED.map(t=>Object.assign({},t));
+    }
+    function saveTxns(t) { try { localStorage.setItem(STORAGE_KEY,JSON.stringify(t)); } catch(e){} }
+    function fmt(n) { return new Intl.NumberFormat("en-AU",{style:"currency",currency:"AUD",minimumFractionDigits:0}).format(n); }
+
+    var S = {
+      view:"dashboard", filter:"all",
+      txns: loadTxns(), nextId:1000,
+      formDate:todayStr(), formType:"expense", formCat:"Food", formDesc:"", formAmt:"",
+      messages:[{role:"assistant",text:"Hi! I can see all your transactions. Ask me anything about your finances — spending patterns, savings tips, or where your money's going."}],
+      chatInput:"", aiLoading:false, aiError:"",
+      importStage:"idle", importRows:[], importEdits:{}, importError:"", importMode:"append",
     };
 
-    // ── helpers ───────────────────────────────────────────────────────────────
-    function todayStr() { return new Date().toISOString().split("T")[0]; }
-
-    function loadTxns() {
-      try { const r = localStorage.getItem(STORAGE_KEY); if (r) return JSON.parse(r); } catch {}
-      return SEED.map(t => ({...t}));
-    }
-
-    function saveTxns(t) {
-      try { localStorage.setItem(STORAGE_KEY, JSON.stringify(t)); } catch {}
-    }
-
-    function fmt(n) {
-      return new Intl.NumberFormat("en-AU",{style:"currency",currency:"AUD",minimumFractionDigits:0}).format(n);
-    }
-
-    function setState(patch) {
-      Object.assign(state, patch);
-      render();
-    }
-
-    function setTxns(txns) {
-      saveTxns(txns);
-      setState({txns});
-    }
+    function set(patch) { Object.assign(S,patch); render(); }
+    function setTxns(t) { saveTxns(t); set({txns:t}); }
 
     // ── import helpers ────────────────────────────────────────────────────────
     function normaliseDate(raw) {
       if (!raw) return todayStr();
-      if (typeof raw === "number") {
-        const d = XLSX.SSF.parse_date_code(raw);
-        if (d) return d.y+"-"+String(d.m).padStart(2,"0")+"-"+String(d.d).padStart(2,"0");
-      }
-      const s = String(raw).trim();
+      if (typeof raw==="number") { var d=XLSX.SSF.parse_date_code(raw); if(d) return d.y+"-"+String(d.m).padStart(2,"0")+"-"+String(d.d).padStart(2,"0"); }
+      var s=String(raw).trim();
       if (/^\d{4}-\d{2}-\d{2}$/.test(s)) return s;
-      const dmy = s.match(/^(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{4})$/);
+      var dmy=s.match(/^(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{4})$/);
       if (dmy) return dmy[3]+"-"+dmy[2].padStart(2,"0")+"-"+dmy[1].padStart(2,"0");
-      const p = new Date(s); if (!isNaN(p)) return p.toISOString().split("T")[0];
+      var p=new Date(s); if(!isNaN(p)) return p.toISOString().split("T")[0];
       return todayStr();
     }
-
     function guessCategory(desc) {
-      const d = (desc||"").toLowerCase();
+      var d=(desc||"").toLowerCase();
       if (/rent|mortgage|council|strata/.test(d)) return "Housing";
       if (/grocer|supermarket|coles|woolworth|aldi|iga|food|cafe|restaurant|takeaway|pizza|mcdonald|kfc/.test(d)) return "Food";
       if (/fuel|petrol|uber|taxi|bus|train|toll|parking|car|transport/.test(d)) return "Transport";
@@ -136,358 +106,356 @@
       if (/freelance|consult|invoice/.test(d)) return "Freelance";
       return "Other";
     }
-
-    function findCol(headers, candidates) {
-      for (const c of candidates) {
-        const found = headers.find(h => h && h.toLowerCase().replace(/[\s_\-]/g,"").includes(c.replace(/[\s_\-]/g,"")));
+    function findCol(headers,candidates) {
+      for (var i=0;i<candidates.length;i++) {
+        var c=candidates[i];
+        var found=headers.find(function(h){return h&&h.toLowerCase().replace(/[\s_\-]/g,"").indexOf(c.replace(/[\s_\-]/g,""))>=0;});
         if (found) return found;
       }
       return null;
     }
-
     function parseRows(rawRows) {
       if (!rawRows.length) return [];
-      const headers = Object.keys(rawRows[0]);
-      const dateCol = findCol(headers,["date","txndate","transactiondate","when"]);
-      const amtCol  = findCol(headers,["amount","amt","value","debit","credit","sum"]);
-      const descCol = findCol(headers,["description","desc","details","memo","narrative","name","payee","merchant"]);
-      const catCol  = findCol(headers,["category","cat","classification"]);
-      const typeCol = findCol(headers,["type","txntype","transactiontype","direction"]);
+      var headers=Object.keys(rawRows[0]);
+      var dateCol=findCol(headers,["date","txndate","transactiondate","when"]);
+      var amtCol =findCol(headers,["amount","amt","value","debit","credit","sum"]);
+      var descCol=findCol(headers,["description","desc","details","memo","narrative","name","payee","merchant"]);
+      var catCol =findCol(headers,["category","cat","classification"]);
+      var typeCol=findCol(headers,["type","txntype","transactiontype","direction"]);
       return rawRows
-        .filter(r => amtCol && r[amtCol] !== undefined && r[amtCol] !== "" && r[amtCol] !== null)
-        .map((r,i) => {
-          const rawAmt = parseFloat(String(r[amtCol]||"0").replace(/[^0-9.\-]/g,""));
-          const amount = Math.abs(isNaN(rawAmt)?0:rawAmt);
-          const desc = descCol ? String(r[descCol]||"").trim() : "";
-          let category = catCol ? String(r[catCol]||"").trim() : "";
-          if (!ALL_CATS.includes(category)) category = guessCategory(desc);
-          let type = typeCol ? String(r[typeCol]||"").toLowerCase() : "";
-          if (type !== "income" && type !== "expense") type = rawAmt < 0 ? "expense" : (CATEGORIES.income.includes(category)?"income":"expense");
-          return {id:Date.now()+i, date:normaliseDate(dateCol?r[dateCol]:""), amount, desc:desc||"Imported transaction", category, type};
+        .filter(function(r){return amtCol&&r[amtCol]!==undefined&&r[amtCol]!==""&&r[amtCol]!==null;})
+        .map(function(r,i){
+          var rawAmt=parseFloat(String(r[amtCol]||"0").replace(/[^0-9.\-]/g,""));
+          var amount=Math.abs(isNaN(rawAmt)?0:rawAmt);
+          var desc=descCol?String(r[descCol]||"").trim():"";
+          var category=catCol?String(r[catCol]||"").trim():"";
+          if (ALL_CATS.indexOf(category)<0) category=guessCategory(desc);
+          var type=typeCol?String(r[typeCol]||"").toLowerCase():"";
+          if (type!=="income"&&type!=="expense") type=rawAmt<0?"expense":(CATEGORIES.income.indexOf(category)>=0?"income":"expense");
+          return {id:Date.now()+i,date:normaliseDate(dateCol?r[dateCol]:""),amount:amount,desc:desc||"Imported transaction",category:category,type:type};
         })
-        .filter(r => r.amount > 0);
+        .filter(function(r){return r.amount>0;});
     }
 
-    // ── derived data ──────────────────────────────────────────────────────────
-    function getSorted() { return [...state.txns].sort((a,b)=>b.date.localeCompare(a.date)); }
-    function getIncome()   { return state.txns.filter(t=>t.type==="income").reduce((s,t)=>s+t.amount,0); }
-    function getExpenses() { return state.txns.filter(t=>t.type==="expense").reduce((s,t)=>s+t.amount,0); }
+    // ── derived ───────────────────────────────────────────────────────────────
+    function getSorted() { return S.txns.slice().sort(function(a,b){return b.date.localeCompare(a.date);}); }
+    function getIncome()   { return S.txns.filter(function(t){return t.type==="income";}).reduce(function(s,t){return s+t.amount;},0); }
+    function getExpenses() { return S.txns.filter(function(t){return t.type==="expense";}).reduce(function(s,t){return s+t.amount;},0); }
+    function getCats() {
+      var map={};
+      S.txns.filter(function(t){return t.type==="expense";}).forEach(function(t){map[t.category]=(map[t.category]||0)+t.amount;});
+      return Object.keys(map).map(function(k){return {label:k,value:map[k],color:CAT_COLORS[k]||"#6B7280"};}).sort(function(a,b){return b.value-a.value;});
+    }
+    function getSpark() {
+      var days=[];
+      for(var i=0;i<7;i++){var d=new Date();d.setDate(d.getDate()-(6-i));days.push(d.toISOString().split("T")[0]);}
+      return days.map(function(d){return S.txns.filter(function(t){return t.date===d&&t.type==="expense";}).reduce(function(s,t){return s+t.amount;},0);});
+    }
+    function getImportRow(idx) { return Object.assign({},S.importRows[idx],S.importEdits[idx]||{}); }
 
-    function getCatBreakdown() {
-      const map = {};
-      state.txns.filter(t=>t.type==="expense").forEach(t=>{ map[t.category]=(map[t.category]||0)+t.amount; });
-      return Object.entries(map).map(([label,value])=>({label,value,color:CAT_COLORS[label]||"#6B7280"})).sort((a,b)=>b.value-a.value);
+    // ── svg ───────────────────────────────────────────────────────────────────
+    function donutSVG(slices,size) {
+      size=size||120;
+      var total=slices.reduce(function(s,x){return s+x.value;},0); if(!total) return "";
+      var cum=0,paths="";
+      slices.forEach(function(sl){
+        var start=(cum/total)*360; cum+=sl.value; var end=(cum/total)*360;
+        var r=size/2-14,cx=size/2,cy=size/2;
+        function toRad(d){return((d-90)*Math.PI)/180;}
+        var x1=cx+r*Math.cos(toRad(start)),y1=cy+r*Math.sin(toRad(start));
+        var x2=cx+r*Math.cos(toRad(end)),  y2=cy+r*Math.sin(toRad(end));
+        paths+='<path d="M '+cx+' '+cy+' L '+x1+' '+y1+' A '+r+' '+r+' 0 '+(end-start>180?1:0)+' 1 '+x2+' '+y2+' Z" fill="'+sl.color+'" opacity="0.9"/>';
+      });
+      return '<svg width="'+size+'" height="'+size+'">'+paths+'<circle cx="'+size/2+'" cy="'+size/2+'" r="'+(size/2-28)+'" fill="#0f172a"/></svg>';
     }
 
-    function getSparkData() {
-      const days = Array.from({length:7},(_,i)=>{ const d=new Date(); d.setDate(d.getDate()-(6-i)); return d.toISOString().split("T")[0]; });
-      return days.map(d=>state.txns.filter(t=>t.date===d&&t.type==="expense").reduce((s,t)=>s+t.amount,0));
-    }
-
-    function getImportRow(idx) { return Object.assign({},state.importRows[idx],state.importEdits[idx]||{}); }
+    // ── html helpers ──────────────────────────────────────────────────────────
+    function esc(s) { return String(s||"").replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;"); }
+    function lbl(t) { return '<div style="font-size:11px;font-weight:700;letter-spacing:0.1em;text-transform:uppercase;color:#64748b;margin-bottom:4px">'+t+'</div>'; }
+    function card(inner,extra) { return '<div style="background:#1e293b;border-radius:16px;padding:18px 20px;margin-bottom:14px'+(extra||"")+'">'+inner+'</div>'; }
 
     // ── actions ───────────────────────────────────────────────────────────────
     function addTxn() {
-      const f = state.form;
-      if (!f.desc||!f.amount||isNaN(+f.amount)) return;
-      const newTxns = [...state.txns, {id:state.nextId, date:f.date, type:f.type, category:f.category, desc:f.desc, amount:parseFloat(f.amount)}];
+      if (!S.formDesc||!S.formAmt||isNaN(+S.formAmt)) return;
+      var newTxns=S.txns.concat([{id:S.nextId,date:S.formDate,type:S.formType,category:S.formCat,desc:S.formDesc,amount:parseFloat(S.formAmt)}]);
       saveTxns(newTxns);
-      setState({txns:newTxns, nextId:state.nextId+1, form:{date:todayStr(),type:"expense",category:"Food",desc:"",amount:""}, view:"transactions"});
+      set({txns:newTxns,nextId:S.nextId+1,formDate:todayStr(),formType:"expense",formCat:"Food",formDesc:"",formAmt:"",view:"transactions"});
     }
-
-    function deleteTxn(id) { setTxns(state.txns.filter(t=>t.id!==id)); }
-
-    function handleFileInput(input) {
-      const file = input.files[0]; if (!file) return;
-      setState({importError:""});
-      const reader = new FileReader();
-      reader.onload = ev => {
-        try {
-          const data = new Uint8Array(ev.target.result);
-          const wb = XLSX.read(data,{type:"array",cellDates:false});
-          const ws = wb.Sheets[wb.SheetNames[0]];
-          const raw = XLSX.utils.sheet_to_json(ws,{defval:""});
-          if (!raw.length) { setState({importError:"No data rows found."}); return; }
-          const parsed = parseRows(raw);
-          if (!parsed.length) { setState({importError:"Couldn't find an amount column."}); return; }
-          setState({importRows:parsed, importEdits:{}, importStage:"preview"});
-        } catch(e) { setState({importError:"Couldn't read that file. Make sure it's a valid .xlsx or .csv."}); }
-      };
-      reader.readAsArrayBuffer(file);
-      input.value="";
-    }
-
+    function deleteTxn(id) { setTxns(S.txns.filter(function(t){return t.id!==id;})); }
     function confirmImport() {
-      const finalRows = state.importRows.map((_,i)=>{ const r=getImportRow(i); return {id:Date.now()+i,date:r.date,type:r.type,category:r.category,desc:r.desc,amount:r.amount}; });
-      const newTxns = state.importMode==="replace" ? finalRows : [...state.txns,...finalRows];
+      var finalRows=S.importRows.map(function(_,i){var r=getImportRow(i);return {id:Date.now()+i,date:r.date,type:r.type,category:r.category,desc:r.desc,amount:r.amount};});
+      var newTxns=S.importMode==="replace"?finalRows:S.txns.concat(finalRows);
       saveTxns(newTxns);
-      setState({txns:newTxns, importStage:"done", importRows:[], importEdits:{}});
+      set({txns:newTxns,importStage:"done",importRows:[],importEdits:{}});
     }
-
-    function resetImport() { setState({importStage:"idle",importRows:[],importEdits:{},importError:""}); }
+    function resetImport() { set({importStage:"idle",importRows:[],importEdits:{},importError:""}); }
 
     function buildSummary() {
-      const income = getIncome(), expenses = getExpenses(), net = income - expenses;
-      const catMap = {};
-      state.txns.filter(t=>t.type==="expense").forEach(t=>{ catMap[t.category]=(catMap[t.category]||0)+t.amount; });
-      const catLines = Object.entries(catMap).sort((a,b)=>b[1]-a[1]).map(([k,v])=>"  "+k+": "+fmt(v)).join("\n");
-      const sorted = getSorted();
-      return "Financial Data (AUD):\n- Income: "+fmt(income)+"  Expenses: "+fmt(expenses)+"  Net: "+fmt(net)+"\n- Savings rate: "+(income>0?Math.round((net/income)*100):0)+"%\nExpense breakdown:\n"+catLines+"\nAll transactions:\n"+sorted.map(t=>"  ["+t.date+"] "+(t.type==="income"?"+":"-")+fmt(t.amount)+" — "+t.desc+" ("+t.category+")").join("\n");
+      var income=getIncome(),expenses=getExpenses(),net=income-expenses;
+      var map={};
+      S.txns.filter(function(t){return t.type==="expense";}).forEach(function(t){map[t.category]=(map[t.category]||0)+t.amount;});
+      var catLines=Object.keys(map).sort(function(a,b){return map[b]-map[a];}).map(function(k){return "  "+k+": "+fmt(map[k]);}).join("\n");
+      var sorted=getSorted();
+      return "Financial Data (AUD):\n- Income: "+fmt(income)+"  Expenses: "+fmt(expenses)+"  Net: "+fmt(net)+"\n- Savings rate: "+(income>0?Math.round((net/income)*100):0)+"%\nExpense breakdown:\n"+catLines+"\nAll transactions:\n"+sorted.map(function(t){return "  ["+t.date+"] "+(t.type==="income"?"+":"-")+fmt(t.amount)+" \u2014 "+t.desc+" ("+t.category+")";}).join("\n");
     }
 
     async function sendMessage(text) {
-      const userText = text || state.chatInput.trim();
-      if (!userText || state.aiLoading) return;
-      const newMsgs = [...state.messages,{role:"user",text:userText}];
-      setState({messages:newMsgs, chatInput:"", aiLoading:true, aiError:""});
+      var userText=text||S.chatInput.trim(); if(!userText||S.aiLoading) return;
+      var newMsgs=S.messages.concat([{role:"user",text:userText}]);
+      set({messages:newMsgs,chatInput:"",aiLoading:true,aiError:""});
       try {
-        const res = await fetch(PROXY_URL, {
-          method:"POST",
-          headers:{"Content-Type":"application/json"},
-          body:JSON.stringify({
-            system:"You are a friendly personal finance advisor. Be concise, specific, use AUD, reference their actual numbers. 2–4 sentences unless a breakdown helps.\n\n"+buildSummary(),
-            messages:newMsgs.map(m=>({role:m.role==="assistant"?"assistant":"user",content:m.text})),
-          }),
-        });
-        if (!res.ok) { const e=await res.json().catch(()=>({})); throw new Error(e.error||"HTTP "+res.status); }
-        const data = await res.json();
-        setState({messages:[...newMsgs,{role:"assistant",text:data.text||"No response."}], aiLoading:false});
+        var res=await fetch(PROXY_URL,{method:"POST",headers:{"Content-Type":"application/json"},
+          body:JSON.stringify({system:"You are a friendly personal finance advisor. Be concise, specific, use AUD, reference their actual numbers. 2\u20134 sentences unless a breakdown helps.\n\n"+buildSummary(),
+            messages:newMsgs.map(function(m){return {role:m.role==="assistant"?"assistant":"user",content:m.text};})})});
+        if (!res.ok) { var e=await res.json().catch(function(){return {};}); throw new Error(e.error||"HTTP "+res.status); }
+        var data=await res.json();
+        set({messages:newMsgs.concat([{role:"assistant",text:data.text||"No response."}]),aiLoading:false});
       } catch(err) {
-        setState({messages:[...newMsgs,{role:"assistant",text:"Sorry, couldn't reach the server. Check your connection."}], aiLoading:false, aiError:err.message||"Error"});
+        set({messages:newMsgs.concat([{role:"assistant",text:"Sorry, couldn't reach the server. Check your connection."}]),aiLoading:false,aiError:err.message||"Error"});
       }
     }
 
-    // ── svg donut ─────────────────────────────────────────────────────────────
-    function donutSVG(slices, size) {
-      size = size||120;
-      const total = slices.reduce((s,x)=>s+x.value,0); if(!total) return "";
-      let cum=0, paths="";
-      slices.forEach(sl=>{
-        const start=(cum/total)*360; cum+=sl.value; const end=(cum/total)*360;
-        const r=size/2-14,cx=size/2,cy=size/2,toRad=d=>((d-90)*Math.PI)/180;
-        const x1=cx+r*Math.cos(toRad(start)),y1=cy+r*Math.sin(toRad(start));
-        const x2=cx+r*Math.cos(toRad(end)),  y2=cy+r*Math.sin(toRad(end));
-        const large=end-start>180?1:0;
-        paths+=`<path d="M ${cx} ${cy} L ${x1} ${y1} A ${r} ${r} 0 ${large} 1 ${x2} ${y2} Z" fill="${sl.color}" opacity="0.9"/>`;
-      });
-      return `<svg width="${size}" height="${size}">${paths}<circle cx="${size/2}" cy="${size/2}" r="${size/2-28}" fill="#0f172a"/></svg>`;
+    // ── event delegation ──────────────────────────────────────────────────────
+    document.addEventListener("click", function(e) {
+      var el=e.target;
+      // walk up to find data-action
+      while (el && el !== document.body) {
+        var action=el.getAttribute("data-action");
+        if (action) {
+          e.preventDefault();
+          handleAction(action, el);
+          return;
+        }
+        el=el.parentElement;
+      }
+    });
+
+    document.addEventListener("change", function(e) {
+      var el=e.target;
+      var field=el.getAttribute("data-field");
+      var idx=el.getAttribute("data-idx");
+      if (field && idx!==null) {
+        var val=el.value;
+        var edits=Object.assign({},S.importEdits);
+        edits[idx]=Object.assign({},edits[idx]||{});
+        edits[idx][field]=field==="amount"?parseFloat(val)||0:val;
+        set({importEdits:edits});
+        return;
+      }
+      // form fields
+      if (el.id==="form-date")  { set({formDate:el.value}); return; }
+      if (el.id==="form-cat")   { set({formCat:el.value}); return; }
+      if (el.id==="form-type")  { set({formType:el.value,formCat:el.value==="income"?"Salary":"Food"}); return; }
+      if (el.id==="chat-input") { S.chatInput=el.value; return; }
+    });
+
+    document.addEventListener("input", function(e) {
+      var el=e.target;
+      if (el.id==="form-desc") { S.formDesc=el.value; return; }
+      if (el.id==="form-amt")  { S.formAmt=el.value; return; }
+      if (el.id==="chat-input"){ S.chatInput=el.value; return; }
+    });
+
+    document.addEventListener("keydown", function(e) {
+      if (e.target.id==="chat-input" && e.key==="Enter" && !e.shiftKey) {
+        e.preventDefault();
+        sendMessage(null);
+      }
+    });
+
+    document.addEventListener("change", function(e) {
+      if (e.target.id==="file-input") {
+        var file=e.target.files[0]; if(!file) return;
+        set({importError:""});
+        var reader=new FileReader();
+        reader.onload=function(ev){
+          try {
+            var data=new Uint8Array(ev.target.result);
+            var wb=XLSX.read(data,{type:"array",cellDates:false});
+            var ws=wb.Sheets[wb.SheetNames[0]];
+            var raw=XLSX.utils.sheet_to_json(ws,{defval:""});
+            if (!raw.length){set({importError:"No data rows found."});return;}
+            var parsed=parseRows(raw);
+            if (!parsed.length){set({importError:"Couldn't find an amount column."});return;}
+            set({importRows:parsed,importEdits:{},importStage:"preview"});
+          } catch(err){set({importError:"Couldn't read that file."});}
+        };
+        reader.readAsArrayBuffer(file);
+        e.target.value="";
+      }
+    });
+
+    function handleAction(action, el) {
+      if (action==="nav")          { set({view:el.getAttribute("data-view")}); return; }
+      if (action==="filter")       { set({filter:el.getAttribute("data-val")}); return; }
+      if (action==="import-mode")  { set({importMode:el.getAttribute("data-val")}); return; }
+      if (action==="add-txn")      { addTxn(); return; }
+      if (action==="cancel-add")   { set({view:"dashboard"}); return; }
+      if (action==="confirm-import"){confirmImport(); return; }
+      if (action==="cancel-import"){ resetImport(); return; }
+      if (action==="reset-import") { resetImport(); return; }
+      if (action==="import-done")  { set({view:"dashboard"}); return; }
+      if (action==="send-chat")    { sendMessage(null); return; }
+      if (action==="prompt")       { sendMessage(el.getAttribute("data-val")); return; }
+      if (action==="delete-txn")   { deleteTxn(parseInt(el.getAttribute("data-id"))); return; }
+      if (action==="open-file")    { document.getElementById("file-input").click(); return; }
     }
 
-    // ── render helpers ────────────────────────────────────────────────────────
-    function pill(color, text) {
-      return `<span style="display:inline-block;background:${color}22;color:${color};border-radius:20px;padding:2px 10px;font-size:11px;font-weight:700">${text}</span>`;
-    }
-
-    function btn(label, onclick, bg, fg) {
-      bg=bg||"#6EE7C0"; fg=fg||"#0f172a";
-      return `<button onclick="${onclick}" style="width:100%;padding:14px;border-radius:12px;border:none;font-weight:700;font-size:15px;cursor:pointer;background:${bg};color:${fg};margin-bottom:10px">${label}</button>`;
-    }
-
-    function miniInput(field, idx, value, type) {
-      type=type||"text";
-      return `<input type="${type}" value="${(value||"").toString().replace(/"/g,'&quot;')}" oninput="updateImportEdit(${idx},'${field}',this.value)" style="background:#0f172a;border:1px solid #334155;border-radius:6px;color:#f1f5f9;padding:5px 8px;font-size:12px;outline:none;width:100%">`;
-    }
-
-    function miniSelect(field, idx, options, current) {
-      return `<select onchange="updateImportEdit(${idx},'${field}',this.value)" style="background:#0f172a;border:1px solid #334155;border-radius:6px;color:#f1f5f9;padding:5px 8px;font-size:12px;outline:none;width:100%">${options.map(o=>`<option value="${o}"${o===current?" selected":""}>${o}</option>`).join("")}</select>`;
-    }
-
-    // ── global handlers ───────────────────────────────────────────────────────
-    window.setView       = v => setState({view:v, ...(v==="import"?{importStage:"idle",importRows:[],importEdits:{},importError:""}:{})});
-    window.setFilter     = f => setState({filter:f});
-    window.setImportMode = m => setState({importMode:m});
-    window.deleteTxn     = id => deleteTxn(id);
-    window.addTxn        = () => addTxn();
-    window.confirmImport = () => confirmImport();
-    window.resetImport   = () => resetImport();
-    window.sendPrompt    = t => sendMessage(t);
-    window.sendChat      = () => sendMessage(null);
-
-    window.updateForm = (field, value) => {
-      const form = Object.assign({},state.form,{[field]:value});
-      if (field==="type") form.category = value==="income"?"Salary":"Food";
-      setState({form});
-    };
-
-    window.updateImportEdit = (idx, field, value) => {
-      const importEdits = Object.assign({},state.importEdits,{[idx]:Object.assign({},state.importEdits[idx]||{},{[field]:field==="amount"?parseFloat(value)||0:value})});
-      setState({importEdits});
-    };
-
-    window.handleFileChange = input => handleFileInput(input);
-
-    window.onChatKey = e => {
-      if (e.key==="Enter"&&!e.shiftKey) { e.preventDefault(); sendMessage(null); }
-    };
-
-    window.updateChatInput = v => { state.chatInput=v; };
-
-    // ── main render ───────────────────────────────────────────────────────────
+    // ── render ────────────────────────────────────────────────────────────────
     function render() {
-      const {view,filter,form,messages,chatInput,aiLoading,aiError,importStage,importRows,importEdits,importMode,importError} = state;
-      const sorted   = getSorted();
-      const income   = getIncome();
-      const expenses = getExpenses();
-      const net      = income - expenses;
-      const cats     = getCatBreakdown();
-      const spark    = getSparkData();
-      const sparkMax = Math.max(...spark,1);
+      var sorted=getSorted(), income=getIncome(), expenses=getExpenses(), net=income-expenses;
+      var cats=getCats(), spark=getSpark(), sparkMax=Math.max.apply(null,spark.concat([1]));
 
-      const NAV = [
+      var NAV=[
         {id:"dashboard",label:"Overview",col:"#6EE7C0"},
         {id:"transactions",label:"Transactions",col:"#6EE7C0"},
         {id:"add",label:"+ Add",col:"#6EE7C0"},
-        {id:"import",label:"↑ Import",col:"#38bdf8"},
-        {id:"ask",label:"✦ Ask",col:"#a78bfa"},
+        {id:"import",label:"&#8593; Import",col:"#38bdf8"},
+        {id:"ask",label:"&#10022; Ask",col:"#a78bfa"},
       ];
+      var navHTML=NAV.map(function(n){
+        var active=S.view===n.id;
+        return '<button data-action="nav" data-view="'+n.id+'" style="flex:1;padding:10px 0;background:none;border:none;border-bottom:'+(active?"2px solid "+n.col:"2px solid transparent")+';color:'+(active?n.col:"#64748b")+';font-weight:600;font-size:11px;cursor:pointer;letter-spacing:0.04em">'+n.label+'</button>';
+      }).join("");
 
-      const navHTML = NAV.map(n=>`<button onclick="setView('${n.id}')" style="flex:1;padding:10px 0;background:none;border:none;border-bottom:${view===n.id?`2px solid ${n.col}`:"2px solid transparent"};color:${view===n.id?n.col:"#64748b"};font-weight:600;font-size:11px;cursor:pointer;letter-spacing:0.04em">${n.label}</button>`).join("");
+      var bodyHTML="";
 
-      let bodyHTML = "";
-
-      // ── DASHBOARD ──
-      if (view==="dashboard") {
-        const sparkBars = spark.map((v,i)=>`<div style="flex:1;height:${Math.max(8,(v/sparkMax)*36)}px;background:${i===spark.length-1?"#6EE7C0":"#1e293b"};border-radius:3px"></div>`).join("");
-        const catRows = cats.slice(0,5).map(c=>`<div style="display:flex;justify-content:space-between;margin-bottom:8px"><div style="display:flex;align-items:center;gap:7px"><div style="width:10px;height:10px;border-radius:50%;background:${c.color};flex-shrink:0"></div><span style="font-size:12px;color:#94a3b8">${c.label}</span></div><span style="font-size:12px;font-weight:700;color:#e2e8f0">${fmt(c.value)}</span></div>`).join("");
-        const recentRows = sorted.slice(0,4).map(t=>`<div style="display:flex;align-items:center;gap:12px;padding:12px 0;border-bottom:1px solid #1e293b"><div style="width:10px;height:10px;border-radius:50%;background:${CAT_COLORS[t.category]||"#6B7280"};flex-shrink:0"></div><div style="flex:1"><div style="font-size:14px;font-weight:600;color:#f1f5f9">${t.desc}</div><div style="font-size:11px;color:#64748b">${t.category} · ${t.date}</div></div><div style="font-size:15px;font-weight:700;color:${t.type==="income"?"#6EE7C0":"#F87171"}">${t.type==="income"?"+":"-"}${fmt(t.amount)}</div></div>`).join("");
-
-        bodyHTML = `
-          <div style="background:${net>=0?"#0d2d22":"#2d0f0f"};border-radius:16px;padding:18px 20px;margin-bottom:14px;border:1px solid ${net>=0?"#6EE7C044":"#F87171aa"}">
-            <div style="font-size:11px;font-weight:700;letter-spacing:0.1em;text-transform:uppercase;color:#64748b;margin-bottom:4px">Net this period</div>
-            <div style="font-size:32px;font-weight:800;letter-spacing:-0.04em;color:${net>=0?"#6EE7C0":"#F87171"}">${fmt(net)}</div>
-            <div style="font-size:12px;color:#64748b;margin-top:4px">${net>=0?fmt(net)+" ahead of spending":fmt(Math.abs(net))+" over income"}</div>
-          </div>
-          <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:14px">
-            <div style="background:#1e293b;border-radius:16px;padding:18px 20px"><div style="font-size:11px;font-weight:700;letter-spacing:0.1em;text-transform:uppercase;color:#64748b;margin-bottom:4px">Income</div><div style="font-size:22px;font-weight:800;color:#6EE7C0;letter-spacing:-0.03em">${fmt(income)}</div></div>
-            <div style="background:#1e293b;border-radius:16px;padding:18px 20px"><div style="font-size:11px;font-weight:700;letter-spacing:0.1em;text-transform:uppercase;color:#64748b;margin-bottom:4px">Spent</div><div style="font-size:22px;font-weight:800;color:#F87171;letter-spacing:-0.03em">${fmt(expenses)}</div></div>
-          </div>
-          <div style="background:#1e293b;border-radius:16px;padding:18px 20px;margin-bottom:14px">
-            <div style="display:flex;justify-content:space-between;margin-bottom:10px"><div style="font-size:11px;font-weight:700;letter-spacing:0.1em;text-transform:uppercase;color:#64748b">7-day spending</div><div style="font-size:11px;color:#64748b">today →</div></div>
-            <div style="display:flex;align-items:flex-end;gap:3px;height:36px">${sparkBars}</div>
-          </div>
-          ${cats.length?`<div style="background:#1e293b;border-radius:16px;padding:18px 20px;margin-bottom:14px"><div style="font-size:11px;font-weight:700;letter-spacing:0.1em;text-transform:uppercase;color:#64748b;margin-bottom:14px">Spending breakdown</div><div style="display:flex;gap:16px;align-items:center">${donutSVG(cats)}<div style="flex:1">${catRows}</div></div></div>`:""}
-          <div style="font-size:11px;font-weight:700;letter-spacing:0.1em;text-transform:uppercase;color:#64748b;margin-bottom:10px;margin-top:4px">Recent</div>
-          ${recentRows}`;
+      // DASHBOARD
+      if (S.view==="dashboard") {
+        var sparkBars=spark.map(function(v,i){return '<div style="flex:1;height:'+Math.max(8,(v/sparkMax)*36)+'px;background:'+(i===spark.length-1?"#6EE7C0":"#1e293b")+';border-radius:3px"></div>';}).join("");
+        var catRows=cats.slice(0,5).map(function(c){return '<div style="display:flex;justify-content:space-between;margin-bottom:8px"><div style="display:flex;align-items:center;gap:7px"><div style="width:10px;height:10px;border-radius:50%;background:'+c.color+';flex-shrink:0"></div><span style="font-size:12px;color:#94a3b8">'+esc(c.label)+'</span></div><span style="font-size:12px;font-weight:700;color:#e2e8f0">'+fmt(c.value)+'</span></div>';}).join("");
+        var recentRows=sorted.slice(0,4).map(function(t){return '<div style="display:flex;align-items:center;gap:12px;padding:12px 0;border-bottom:1px solid #1e293b"><div style="width:10px;height:10px;border-radius:50%;background:'+(CAT_COLORS[t.category]||"#6B7280")+';flex-shrink:0"></div><div style="flex:1"><div style="font-size:14px;font-weight:600;color:#f1f5f9">'+esc(t.desc)+'</div><div style="font-size:11px;color:#64748b">'+esc(t.category)+' \xb7 '+t.date+'</div></div><div style="font-size:15px;font-weight:700;color:'+(t.type==="income"?"#6EE7C0":"#F87171")+'">'+(t.type==="income"?"+":"-")+fmt(t.amount)+'</div></div>';}).join("");
+        bodyHTML=
+          '<div style="background:'+(net>=0?"#0d2d22":"#2d0f0f")+';border-radius:16px;padding:18px 20px;margin-bottom:14px;border:1px solid '+(net>=0?"#6EE7C044":"#F87171aa")+'">'+lbl("Net this period")+'<div style="font-size:32px;font-weight:800;letter-spacing:-0.04em;color:'+(net>=0?"#6EE7C0":"#F87171")+'">'+fmt(net)+'</div><div style="font-size:12px;color:#64748b;margin-top:4px">'+(net>=0?fmt(net)+" ahead of spending":fmt(Math.abs(net))+" over income")+'</div></div>'+
+          '<div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:14px">'+
+            card(lbl("Income")+'<div style="font-size:22px;font-weight:800;color:#6EE7C0;letter-spacing:-0.03em">'+fmt(income)+'</div>')+
+            card(lbl("Spent")+'<div style="font-size:22px;font-weight:800;color:#F87171;letter-spacing:-0.03em">'+fmt(expenses)+'</div>')+
+          '</div>'+
+          card(lbl("7-day spending")+'<div style="font-size:11px;color:#64748b;text-align:right;margin-top:-20px;margin-bottom:10px">today \u2192</div><div style="display:flex;align-items:flex-end;gap:3px;height:36px">'+sparkBars+'</div>')+
+          (cats.length?card(lbl("Spending breakdown")+'<div style="display:flex;gap:16px;align-items:center">'+donutSVG(cats)+'<div style="flex:1">'+catRows+'</div></div>'):"")+'<div style="font-size:11px;font-weight:700;letter-spacing:0.1em;text-transform:uppercase;color:#64748b;margin-bottom:10px;margin-top:4px">Recent</div>'+recentRows;
       }
 
-      // ── TRANSACTIONS ──
-      else if (view==="transactions") {
-        const chips = ["all","income","expense"].map(f=>`<button onclick="setFilter('${f}')" style="padding:6px 14px;border-radius:20px;border:1px solid ${filter===f?"#6EE7C0":"#334155"};background:${filter===f?"#6EE7C022":"none"};color:${filter===f?"#6EE7C0":"#64748b"};font-size:12px;font-weight:600;cursor:pointer">${f.charAt(0).toUpperCase()+f.slice(1)}</button>`).join("");
-        const rows = sorted.filter(t=>filter==="all"||t.type===filter).map(t=>`<div style="display:flex;align-items:center;gap:12px;padding:12px 0;border-bottom:1px solid #1e293b"><div style="width:10px;height:10px;border-radius:50%;background:${CAT_COLORS[t.category]||"#6B7280"};flex-shrink:0"></div><div style="flex:1"><div style="font-size:14px;font-weight:600;color:#f1f5f9">${t.desc}</div><div style="display:flex;gap:6px;margin-top:2px">${pill(CAT_COLORS[t.category]||"#6B7280",t.category)}<span style="font-size:11px;color:#475569">${t.date}</span></div></div><div style="text-align:right"><div style="font-size:15px;font-weight:700;color:${t.type==="income"?"#6EE7C0":"#F87171"}">${t.type==="income"?"+":"-"}${fmt(t.amount)}</div><button onclick="deleteTxn(${t.id})" style="background:none;border:none;color:#334155;cursor:pointer;font-size:12px;padding:0;margin-top:2px">remove</button></div></div>`).join("");
-        bodyHTML = `<div style="display:flex;gap:8px;margin-bottom:16px">${chips}</div>${rows||`<div style="text-align:center;color:#475569;padding-top:48px;font-size:14px">No transactions yet. Add one →</div>`}`;
+      // TRANSACTIONS
+      else if (S.view==="transactions") {
+        var chips=["all","income","expense"].map(function(f){return '<button data-action="filter" data-val="'+f+'" style="padding:6px 14px;border-radius:20px;border:1px solid '+(S.filter===f?"#6EE7C0":"#334155")+';background:'+(S.filter===f?"#6EE7C022":"none")+';color:'+(S.filter===f?"#6EE7C0":"#64748b")+';font-size:12px;font-weight:600;cursor:pointer">'+f.charAt(0).toUpperCase()+f.slice(1)+'</button>';}).join("");
+        var rows=sorted.filter(function(t){return S.filter==="all"||t.type===S.filter;}).map(function(t){
+          return '<div style="display:flex;align-items:center;gap:12px;padding:12px 0;border-bottom:1px solid #1e293b"><div style="width:10px;height:10px;border-radius:50%;background:'+(CAT_COLORS[t.category]||"#6B7280")+';flex-shrink:0"></div><div style="flex:1"><div style="font-size:14px;font-weight:600;color:#f1f5f9">'+esc(t.desc)+'</div><div style="display:flex;gap:6px;margin-top:2px"><span style="display:inline-block;background:'+(CAT_COLORS[t.category]||"#6B7280")+'22;color:'+(CAT_COLORS[t.category]||"#6B7280")+';border-radius:20px;padding:2px 10px;font-size:11px;font-weight:700">'+esc(t.category)+'</span><span style="font-size:11px;color:#475569">'+t.date+'</span></div></div><div style="text-align:right"><div style="font-size:15px;font-weight:700;color:'+(t.type==="income"?"#6EE7C0":"#F87171")+'">'+(t.type==="income"?"+":"-")+fmt(t.amount)+'</div><button data-action="delete-txn" data-id="'+t.id+'" style="background:none;border:none;color:#334155;cursor:pointer;font-size:12px;padding:0;margin-top:2px">remove</button></div></div>';
+        }).join("");
+        bodyHTML='<div style="display:flex;gap:8px;margin-bottom:16px">'+chips+'</div>'+(rows||'<div style="text-align:center;color:#475569;padding-top:48px;font-size:14px">No transactions yet. Add one \u2192</div>');
       }
 
-      // ── ADD ──
-      else if (view==="add") {
-        const typeBtns = ["expense","income"].map(t=>`<button onclick="updateForm('type','${t}')" style="padding:12px;border-radius:12px;border:2px solid ${form.type===t?(t==="income"?"#6EE7C0":"#F87171"):"#334155"};background:${form.type===t?(t==="income"?"#6EE7C022":"#F8717122"):"#1e293b"};color:${form.type===t?(t==="income"?"#6EE7C0":"#F87171"):"#64748b"};font-weight:700;font-size:14px;cursor:pointer;text-transform:capitalize">${t}</button>`).join("");
-        const catOptions = CATEGORIES[form.type].map(c=>`<option value="${c}"${c===form.category?" selected":""}>${c}</option>`).join("");
-        bodyHTML = `
-          <div style="font-size:11px;font-weight:700;letter-spacing:0.1em;text-transform:uppercase;color:#64748b;margin-bottom:14px">Log a transaction</div>
-          <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:16px">${typeBtns}</div>
-          <input type="date" value="${form.date}" oninput="updateForm('date',this.value)" style="width:100%;background:#1e293b;border:1px solid #334155;border-radius:10px;color:#f1f5f9;padding:12px 14px;font-size:15px;margin-bottom:12px;outline:none;box-sizing:border-box">
-          <select onchange="updateForm('category',this.value)" style="width:100%;background:#1e293b;border:1px solid #334155;border-radius:10px;color:#f1f5f9;padding:12px 14px;font-size:15px;margin-bottom:12px;outline:none;box-sizing:border-box">${catOptions}</select>
-          <input type="text" placeholder="Description" value="${(form.desc||"").replace(/"/g,'&quot;')}" oninput="updateForm('desc',this.value)" style="width:100%;background:#1e293b;border:1px solid #334155;border-radius:10px;color:#f1f5f9;padding:12px 14px;font-size:15px;margin-bottom:12px;outline:none;box-sizing:border-box">
-          <input type="number" placeholder="Amount (AUD)" value="${form.amount||""}" oninput="updateForm('amount',this.value)" min="0" step="0.01" style="width:100%;background:#1e293b;border:1px solid #334155;border-radius:10px;color:#f1f5f9;padding:12px 14px;font-size:15px;margin-bottom:12px;outline:none;box-sizing:border-box">
-          ${btn("Save transaction","addTxn()")}
-          ${btn("Cancel","setView('dashboard')","#1e293b","#94a3b8")}`;
+      // ADD
+      else if (S.view==="add") {
+        var typeBtns=["expense","income"].map(function(t){var a=S.formType===t;return '<button data-action="form-type" data-val="'+t+'" style="padding:12px;border-radius:12px;border:2px solid '+(a?(t==="income"?"#6EE7C0":"#F87171"):"#334155")+';background:'+(a?(t==="income"?"#6EE7C022":"#F8717122"):"#1e293b")+';color:'+(a?(t==="income"?"#6EE7C0":"#F87171"):"#64748b")+';font-weight:700;font-size:14px;cursor:pointer;text-transform:capitalize">'+t+'</button>';}).join("");
+        var catOpts=CATEGORIES[S.formType].map(function(c){return '<option value="'+esc(c)+'"'+(c===S.formCat?" selected":"")+'>'+esc(c)+'</option>';}).join("");
+        bodyHTML=
+          lbl("Log a transaction")+
+          '<div style="margin-bottom:14px"></div>'+
+          '<div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:16px">'+typeBtns+'</div>'+
+          '<input id="form-date" type="date" value="'+S.formDate+'" style="width:100%;background:#1e293b;border:1px solid #334155;border-radius:10px;color:#f1f5f9;padding:12px 14px;font-size:15px;margin-bottom:12px;outline:none">'+
+          '<select id="form-cat" style="width:100%;background:#1e293b;border:1px solid #334155;border-radius:10px;color:#f1f5f9;padding:12px 14px;font-size:15px;margin-bottom:12px;outline:none">'+catOpts+'</select>'+
+          '<input id="form-desc" type="text" placeholder="Description" value="'+esc(S.formDesc)+'" style="width:100%;background:#1e293b;border:1px solid #334155;border-radius:10px;color:#f1f5f9;padding:12px 14px;font-size:15px;margin-bottom:12px;outline:none">'+
+          '<input id="form-amt" type="number" placeholder="Amount (AUD)" value="'+esc(S.formAmt)+'" min="0" step="0.01" style="width:100%;background:#1e293b;border:1px solid #334155;border-radius:10px;color:#f1f5f9;padding:12px 14px;font-size:15px;margin-bottom:12px;outline:none">'+
+          '<button data-action="add-txn" style="width:100%;padding:14px;border-radius:12px;border:none;font-weight:700;font-size:15px;cursor:pointer;background:#6EE7C0;color:#0f172a;margin-bottom:10px">Save transaction</button>'+
+          '<button data-action="cancel-add" style="width:100%;padding:14px;border-radius:12px;border:none;font-weight:700;font-size:15px;cursor:pointer;background:#1e293b;color:#94a3b8;margin-bottom:10px">Cancel</button>';
+
+        // handle type button click separately since it's not a nav
+        document.addEventListener("click",function typeHandler(e){
+          var el=e.target;
+          while(el&&el!==document.body){
+            if(el.getAttribute("data-action")==="form-type"){
+              var val=el.getAttribute("data-val");
+              set({formType:val,formCat:val==="income"?"Salary":"Food"});
+              document.removeEventListener("click",typeHandler);
+              return;
+            }
+            el=el.parentElement;
+          }
+        });
       }
 
-      // ── IMPORT ──
-      else if (view==="import") {
-        if (importStage==="idle") {
-          const modeBtns = [["append","Add to existing"],["replace","Replace all"]].map(([val,label])=>`<button onclick="setImportMode('${val}')" style="padding:12px;border-radius:12px;border:2px solid ${importMode===val?"#38bdf8":"#334155"};background:${importMode===val?"#0c2a3a":"#1e293b"};color:${importMode===val?"#38bdf8":"#64748b"};font-weight:700;font-size:13px;cursor:pointer">${label}</button>`).join("");
-          bodyHTML = `
-            <div style="font-size:11px;font-weight:700;letter-spacing:0.1em;text-transform:uppercase;color:#38bdf8;margin-bottom:4px">Import transactions</div>
-            <div style="font-size:12px;color:#475569;margin-bottom:20px">Accepts .xlsx, .xls, or .csv</div>
-            <label style="display:block;border:2px dashed #334155;border-radius:16px;padding:40px 24px;text-align:center;cursor:pointer;margin-bottom:16px">
-              <div style="font-size:32px;margin-bottom:10px">📂</div>
-              <div style="font-weight:700;color:#e2e8f0;margin-bottom:6px">Tap to choose a file</div>
-              <div style="font-size:12px;color:#475569">or drag and drop here</div>
-              <input type="file" accept=".xlsx,.xls,.csv" style="display:none" onchange="handleFileChange(this)">
-            </label>
-            ${importError?`<div style="background:#2d0f0f;border:1px solid #F87171;border-radius:12px;padding:12px 16px;color:#F87171;font-size:13px;margin-bottom:16px">${importError}</div>`:""}
-            <div style="background:#1e293b;border-radius:16px;padding:18px 20px;margin-bottom:14px">
-              <div style="font-size:11px;font-weight:700;letter-spacing:0.1em;text-transform:uppercase;color:#64748b;margin-bottom:10px">Expected columns</div>
-              <div style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:10px">${["date","amount","description","category","type"].map(c=>`<span style="background:#0f172a;border-radius:6px;padding:3px 10px;font-size:11px;color:#38bdf8;font-family:monospace">${c}</span>`).join("")}</div>
-              <div style="font-size:12px;color:#475569;line-height:1.7">Column names are flexible. Missing category/type columns are auto-guessed. ANZ, CBA, NAB, and Westpac CSV exports typically work out of the box.</div>
-            </div>
-            <div style="font-size:11px;font-weight:700;letter-spacing:0.1em;text-transform:uppercase;color:#64748b;margin-bottom:10px">Import mode</div>
-            <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">${modeBtns}</div>`;
-        } else if (importStage==="preview") {
-          const rowsHTML = importRows.map((_,idx)=>{
-            const r = getImportRow(idx);
-            const catOpts = ALL_CATS.map(c=>`<option value="${c}"${c===r.category?" selected":""}>${c}</option>`).join("");
-            return `<div style="background:#1e293b;border-radius:12px;padding:12px 14px;margin-bottom:10px">
-              <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:8px">
-                <div><div style="font-size:10px;color:#64748b;margin-bottom:3px">DATE</div>${miniInput("date",idx,r.date)}</div>
-                <div><div style="font-size:10px;color:#64748b;margin-bottom:3px">AMOUNT</div>${miniInput("amount",idx,r.amount,"number")}</div>
-              </div>
-              <div style="margin-bottom:8px"><div style="font-size:10px;color:#64748b;margin-bottom:3px">DESCRIPTION</div>${miniInput("desc",idx,r.desc)}</div>
-              <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">
-                <div><div style="font-size:10px;color:#64748b;margin-bottom:3px">CATEGORY</div><select onchange="updateImportEdit(${idx},'category',this.value)" style="background:#0f172a;border:1px solid #334155;border-radius:6px;color:#f1f5f9;padding:5px 8px;font-size:12px;outline:none;width:100%">${catOpts}</select></div>
-                <div><div style="font-size:10px;color:#64748b;margin-bottom:3px">TYPE</div><select onchange="updateImportEdit(${idx},'type',this.value)" style="background:#0f172a;border:1px solid #334155;border-radius:6px;color:#f1f5f9;padding:5px 8px;font-size:12px;outline:none;width:100%"><option value="expense"${r.type==="expense"?" selected":""}>Expense</option><option value="income"${r.type==="income"?" selected":""}>Income</option></select></div>
-              </div>
-            </div>`;
+      // IMPORT
+      else if (S.view==="import") {
+        if (S.importStage==="idle") {
+          var modeBtns=[["append","Add to existing"],["replace","Replace all"]].map(function(m){var a=S.importMode===m[0];return '<button data-action="import-mode" data-val="'+m[0]+'" style="padding:12px;border-radius:12px;border:2px solid '+(a?"#38bdf8":"#334155")+';background:'+(a?"#0c2a3a":"#1e293b")+';color:'+(a?"#38bdf8":"#64748b")+';font-weight:700;font-size:13px;cursor:pointer">'+m[1]+'</button>';}).join("");
+          bodyHTML=
+            '<div style="font-size:11px;font-weight:700;letter-spacing:0.1em;text-transform:uppercase;color:#38bdf8;margin-bottom:4px">Import transactions</div>'+
+            '<div style="font-size:12px;color:#475569;margin-bottom:20px">Accepts .xlsx, .xls, or .csv</div>'+
+            '<input type="file" id="file-input" accept=".xlsx,.xls,.csv" style="display:none">'+
+            '<div data-action="open-file" style="border:2px dashed #334155;border-radius:16px;padding:40px 24px;text-align:center;cursor:pointer;margin-bottom:16px"><div style="font-size:32px;margin-bottom:10px">&#128194;</div><div style="font-weight:700;color:#e2e8f0;margin-bottom:6px">Tap to choose a file</div><div style="font-size:12px;color:#475569">or drag and drop here</div></div>'+
+            (S.importError?'<div style="background:#2d0f0f;border:1px solid #F87171;border-radius:12px;padding:12px 16px;color:#F87171;font-size:13px;margin-bottom:16px">'+esc(S.importError)+'</div>':"")+
+            card(lbl("Expected columns")+'<div style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:10px">'+["date","amount","description","category","type"].map(function(c){return '<span style="background:#0f172a;border-radius:6px;padding:3px 10px;font-size:11px;color:#38bdf8;font-family:monospace">'+c+'</span>';}).join("")+'</div><div style="font-size:12px;color:#475569;line-height:1.7">Column names are flexible. Missing category/type columns are auto-guessed. ANZ, CBA, NAB, and Westpac CSV exports typically work out of the box.</div>')+
+            '<div style="font-size:11px;font-weight:700;letter-spacing:0.1em;text-transform:uppercase;color:#64748b;margin-bottom:10px">Import mode</div>'+
+            '<div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">'+modeBtns+'</div>';
+        } else if (S.importStage==="preview") {
+          var rowsHTML=S.importRows.map(function(_,idx){
+            var r=getImportRow(idx);
+            var catOpts2=ALL_CATS.map(function(c){return '<option value="'+esc(c)+'"'+(c===r.category?" selected":"")+'>'+esc(c)+'</option>';}).join("");
+            return '<div style="background:#1e293b;border-radius:12px;padding:12px 14px;margin-bottom:10px">'+
+              '<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:8px">'+
+                '<div><div style="font-size:10px;color:#64748b;margin-bottom:3px">DATE</div><input type="text" data-field="date" data-idx="'+idx+'" value="'+esc(r.date)+'" style="background:#0f172a;border:1px solid #334155;border-radius:6px;color:#f1f5f9;padding:5px 8px;font-size:12px;outline:none;width:100%"></div>'+
+                '<div><div style="font-size:10px;color:#64748b;margin-bottom:3px">AMOUNT</div><input type="number" data-field="amount" data-idx="'+idx+'" value="'+r.amount+'" style="background:#0f172a;border:1px solid #334155;border-radius:6px;color:#f1f5f9;padding:5px 8px;font-size:12px;outline:none;width:100%"></div>'+
+              '</div>'+
+              '<div style="margin-bottom:8px"><div style="font-size:10px;color:#64748b;margin-bottom:3px">DESCRIPTION</div><input type="text" data-field="desc" data-idx="'+idx+'" value="'+esc(r.desc)+'" style="background:#0f172a;border:1px solid #334155;border-radius:6px;color:#f1f5f9;padding:5px 8px;font-size:12px;outline:none;width:100%"></div>'+
+              '<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">'+
+                '<div><div style="font-size:10px;color:#64748b;margin-bottom:3px">CATEGORY</div><select data-field="category" data-idx="'+idx+'" style="background:#0f172a;border:1px solid #334155;border-radius:6px;color:#f1f5f9;padding:5px 8px;font-size:12px;outline:none;width:100%">'+catOpts2+'</select></div>'+
+                '<div><div style="font-size:10px;color:#64748b;margin-bottom:3px">TYPE</div><select data-field="type" data-idx="'+idx+'" style="background:#0f172a;border:1px solid #334155;border-radius:6px;color:#f1f5f9;padding:5px 8px;font-size:12px;outline:none;width:100%"><option value="expense"'+(r.type==="expense"?" selected":"")+'>Expense</option><option value="income"'+(r.type==="income"?" selected":"")+'>Income</option></select></div>'+
+              '</div>'+
+            '</div>';
           }).join("");
-          bodyHTML = `
-            <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:4px">
-              <div style="font-size:11px;font-weight:700;letter-spacing:0.1em;text-transform:uppercase;color:#38bdf8">Preview — ${importRows.length} rows</div>
-              <button onclick="resetImport()" style="background:none;border:none;color:#475569;font-size:12px;cursor:pointer">← back</button>
-            </div>
-            <div style="font-size:12px;color:#475569;margin-bottom:16px">Edit anything before confirming.</div>
-            ${rowsHTML}
-            ${btn("Confirm — import "+importRows.length+" transactions","confirmImport()","#38bdf8")}
-            ${btn("Cancel","resetImport()","#1e293b","#94a3b8")}`;
+          bodyHTML=
+            '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:4px">'+
+              '<div style="font-size:11px;font-weight:700;letter-spacing:0.1em;text-transform:uppercase;color:#38bdf8">Preview \u2014 '+S.importRows.length+' rows</div>'+
+              '<button data-action="reset-import" style="background:none;border:none;color:#475569;font-size:12px;cursor:pointer">\u2190 back</button>'+
+            '</div>'+
+            '<div style="font-size:12px;color:#475569;margin-bottom:16px">Edit anything before confirming.</div>'+
+            rowsHTML+
+            '<button data-action="confirm-import" style="width:100%;padding:14px;border-radius:12px;border:none;font-weight:700;font-size:15px;cursor:pointer;background:#38bdf8;color:#0f172a;margin-bottom:10px">Confirm \u2014 import '+S.importRows.length+' transactions</button>'+
+            '<button data-action="cancel-import" style="width:100%;padding:14px;border-radius:12px;border:none;font-weight:700;font-size:15px;cursor:pointer;background:#1e293b;color:#94a3b8;margin-bottom:10px">Cancel</button>';
         } else {
-          bodyHTML = `<div style="text-align:center;padding-top:40px"><div style="font-size:48px;margin-bottom:16px">✓</div><div style="font-weight:800;font-size:20px;color:#e2e8f0;margin-bottom:8px">Import complete</div><div style="font-size:14px;color:#64748b;margin-bottom:32px">Your transactions have been updated.</div><button onclick="setView('dashboard')" style="padding:12px 28px;border-radius:12px;border:none;font-weight:700;font-size:15px;cursor:pointer;background:#38bdf8;color:#0f172a">Go to overview</button></div>`;
+          bodyHTML='<div style="text-align:center;padding-top:40px"><div style="font-size:48px;margin-bottom:16px">\u2713</div><div style="font-weight:800;font-size:20px;color:#e2e8f0;margin-bottom:8px">Import complete</div><div style="font-size:14px;color:#64748b;margin-bottom:32px">Your transactions have been updated.</div><button data-action="import-done" style="padding:12px 28px;border-radius:12px;border:none;font-weight:700;font-size:15px;cursor:pointer;background:#38bdf8;color:#0f172a">Go to overview</button></div>';
         }
       }
 
-      // ── ASK AI ──
-      else if (view==="ask") {
-        const msgHTML = messages.map(m=>`<div style="display:flex;justify-content:${m.role==="user"?"flex-end":"flex-start"}"><div style="max-width:82%;padding:11px 14px;border-radius:${m.role==="user"?"18px 18px 4px 18px":"18px 18px 18px 4px"};background:${m.role==="user"?"#4c1d95":"#1e293b"};color:${m.role==="user"?"#ede9fe":"#e2e8f0"};font-size:14px;line-height:1.55;white-space:pre-wrap">${m.text.replace(/</g,"&lt;")}</div></div>`).join("");
-        const promptBtns = messages.filter(m=>m.role==="user").length===0 ? `<div style="display:flex;flex-wrap:wrap;gap:8px;margin-bottom:16px">${PROMPTS.map(p=>`<button onclick="sendPrompt('${p.replace(/'/g,"\\'")}') " style="background:#1e1b2e;border:1px solid #4c1d9522;border-radius:20px;color:#a78bfa;font-size:12px;padding:7px 13px;cursor:pointer;font-weight:500">${p}</button>`).join("")}</div>` : "";
-        const dotsHTML = aiLoading ? `<div style="display:flex;justify-content:flex-start"><div style="background:#1e293b;border-radius:18px 18px 18px 4px;padding:11px 16px"><div style="display:flex;gap:4px;align-items:center;padding:4px 0"><div class="dot-1" style="width:6px;height:6px;border-radius:50%;background:#6EE7C0"></div><div class="dot-2" style="width:6px;height:6px;border-radius:50%;background:#6EE7C0"></div><div class="dot-3" style="width:6px;height:6px;border-radius:50%;background:#6EE7C0"></div></div></div></div>` : "";
-        bodyHTML = `
-          <div style="display:flex;flex-direction:column;height:calc(100vh - 160px)">
-            <div style="margin-bottom:16px">
-              <div style="font-size:11px;font-weight:700;letter-spacing:0.1em;text-transform:uppercase;color:#a78bfa;margin-bottom:4px">AI Finance Advisor</div>
-              <div style="font-size:12px;color:#475569">Powered by Claude · end-to-end via secure proxy</div>
-            </div>
-            ${promptBtns}
-            ${aiError?`<div style="background:#2d0f0f;border:1px solid #F87171;border-radius:10px;padding:10px 14px;color:#F87171;font-size:12px;margin-bottom:12px">${aiError}</div>`:""}
-            <div id="chat-messages" style="flex:1;overflow-y:auto;display:flex;flex-direction:column;gap:12px;padding-bottom:12px">
-              ${msgHTML}${dotsHTML}
-            </div>
-            <div style="display:flex;gap:8px;padding-top:12px;border-top:1px solid #1e293b">
-              <input id="chat-input" placeholder="Ask about your finances…" value="${(chatInput||"").replace(/"/g,'&quot;')}" oninput="updateChatInput(this.value)" onkeydown="onChatKey(event)" style="flex:1;background:#1e293b;border:1px solid #2d1f5e;border-radius:10px;color:#f1f5f9;padding:12px 14px;font-size:14px;outline:none;box-sizing:border-box">
-              <button onclick="sendChat()" ${aiLoading?"disabled":""} style="padding:12px 16px;border-radius:10px;border:none;background:${aiLoading?"#1e293b":"#a78bfa"};color:${aiLoading?"#475569":"#0f172a"};font-weight:700;font-size:15px;cursor:${aiLoading?"default":"pointer"}">↑</button>
-            </div>
-          </div>`;
-
-        // scroll chat after render
-        setTimeout(()=>{ const el=document.getElementById("chat-messages"); if(el) el.scrollTop=el.scrollHeight; },50);
+      // ASK
+      else if (S.view==="ask") {
+        var hasUserMsg=S.messages.filter(function(m){return m.role==="user";}).length>0;
+        var promptBtns=!hasUserMsg?'<div style="display:flex;flex-wrap:wrap;gap:8px;margin-bottom:16px">'+PROMPTS.map(function(p){return '<button data-action="prompt" data-val="'+esc(p)+'" style="background:#1e1b2e;border:1px solid #4c1d9522;border-radius:20px;color:#a78bfa;font-size:12px;padding:7px 13px;cursor:pointer;font-weight:500">'+esc(p)+'</button>';}).join("")+'</div>':"";
+        var msgHTML=S.messages.map(function(m){var u=m.role==="user";return '<div style="display:flex;justify-content:'+(u?"flex-end":"flex-start")+'"><div style="max-width:82%;padding:11px 14px;border-radius:'+(u?"18px 18px 4px 18px":"18px 18px 18px 4px")+';background:'+(u?"#4c1d95":"#1e293b")+';color:'+(u?"#ede9fe":"#e2e8f0")+';font-size:14px;line-height:1.55;white-space:pre-wrap">'+esc(m.text)+'</div></div>';}).join("");
+        var dots=S.aiLoading?'<div style="display:flex;justify-content:flex-start"><div style="background:#1e293b;border-radius:18px 18px 18px 4px;padding:11px 16px"><div style="display:flex;gap:4px;align-items:center"><div class="dot-1" style="width:6px;height:6px;border-radius:50%;background:#6EE7C0"></div><div class="dot-2" style="width:6px;height:6px;border-radius:50%;background:#6EE7C0"></div><div class="dot-3" style="width:6px;height:6px;border-radius:50%;background:#6EE7C0"></div></div></div></div>':"";
+        bodyHTML=
+          '<div style="display:flex;flex-direction:column;height:calc(100vh - 160px)">'+
+            '<div style="margin-bottom:16px"><div style="font-size:11px;font-weight:700;letter-spacing:0.1em;text-transform:uppercase;color:#a78bfa;margin-bottom:4px">AI Finance Advisor</div><div style="font-size:12px;color:#475569">Powered by Claude \xb7 end-to-end via secure proxy</div></div>'+
+            promptBtns+
+            (S.aiError?'<div style="background:#2d0f0f;border:1px solid #F87171;border-radius:10px;padding:10px 14px;color:#F87171;font-size:12px;margin-bottom:12px">'+esc(S.aiError)+'</div>':"")+
+            '<div id="chat-messages" style="flex:1;overflow-y:auto;display:flex;flex-direction:column;gap:12px;padding-bottom:12px">'+msgHTML+dots+'</div>'+
+            '<div style="display:flex;gap:8px;padding-top:12px;border-top:1px solid #1e293b">'+
+              '<input id="chat-input" placeholder="Ask about your finances\u2026" value="'+esc(S.chatInput)+'" style="flex:1;background:#1e293b;border:1px solid #2d1f5e;border-radius:10px;color:#f1f5f9;padding:12px 14px;font-size:14px;outline:none;box-sizing:border-box">'+
+              '<button data-action="send-chat" '+(S.aiLoading?"disabled":"")+' style="padding:12px 16px;border-radius:10px;border:none;background:'+(S.aiLoading?"#1e293b":"#a78bfa")+';color:'+(S.aiLoading?"#475569":"#0f172a")+';font-weight:700;font-size:15px;cursor:'+(S.aiLoading?"default":"pointer")+'">\u2191</button>'+
+            '</div>'+
+          '</div>';
+        setTimeout(function(){var el=document.getElementById("chat-messages");if(el)el.scrollTop=el.scrollHeight;},50);
       }
 
-      document.getElementById("root").innerHTML = `
-        <div style="background:#0f172a;min-height:100vh;max-width:480px;margin:0 auto">
-          <div style="padding:env(safe-area-inset-top,20px) 24px 0;background:#0f172a;position:sticky;top:0;z-index:10">
-            <div style="font-size:13px;font-weight:700;letter-spacing:0.15em;text-transform:uppercase;color:#6EE7C0;margin-bottom:2px;padding-top:8px">Ledge</div>
-            <div style="font-size:22px;font-weight:800;color:#f8fafc;letter-spacing:-0.03em;margin-bottom:20px">Your money, clear.</div>
-            <div style="display:flex;border-bottom:1px solid #1e293b">${navHTML}</div>
-          </div>
-          <div style="padding:20px 24px 100px">${bodyHTML}</div>
-        </div>`;
+      document.getElementById("root").innerHTML=
+        '<div style="background:#0f172a;min-height:100vh;max-width:480px;margin:0 auto">'+
+          '<div style="padding:env(safe-area-inset-top,20px) 24px 0;background:#0f172a;position:sticky;top:0;z-index:10">'+
+            '<div style="font-size:13px;font-weight:700;letter-spacing:0.15em;text-transform:uppercase;color:#6EE7C0;margin-bottom:2px;padding-top:8px">Ledge</div>'+
+            '<div style="font-size:22px;font-weight:800;color:#f8fafc;letter-spacing:-0.03em;margin-bottom:20px">Your money, clear.</div>'+
+            '<div style="display:flex;border-bottom:1px solid #1e293b">'+navHTML+'</div>'+
+          '</div>'+
+          '<div style="padding:20px 24px 100px">'+bodyHTML+'</div>'+
+        '</div>';
     }
 
-    // ── boot ──────────────────────────────────────────────────────────────────
     render();
 
     if ("serviceWorker" in navigator) {
-      window.addEventListener("load", ()=>{
-        navigator.serviceWorker.register("/ledge/sw.js").catch(e=>console.warn("SW failed:",e));
+      window.addEventListener("load",function(){
+        navigator.serviceWorker.register("/ledge/sw.js").catch(function(e){console.warn("SW failed:",e);});
       });
     }
+  })();
   </script>
 </body>
 </html>
