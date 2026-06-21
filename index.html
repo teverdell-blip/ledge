@@ -8,7 +8,7 @@
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
   <meta name="apple-mobile-web-app-title" content="Ledge" />
   <!-- CSP: only allows scripts from these exact CDNs and your Worker -->
-    <link rel="manifest" href="manifest.json" />
+  <link rel="manifest" href="manifest.json" />
   <link rel="apple-touch-icon" href="icons/icon-192.png" />
   <title>Ledge – Finance Tracker</title>
   <style>
@@ -29,11 +29,9 @@
   <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/xlsx/dist/xlsx.full.min.js"></script>
 
-  <script type="text/babel">
+  <script type="text/babel" data-presets="react">
     const { useState, useMemo, useRef, useEffect } = React;
 
-    // ── IMPORTANT: replace with your actual Worker URL after deploying ───────
-    // e.g. "https://ledge-proxy.teverdell-blip.workers.dev"
     const PROXY_URL = "https://ledge-proxy.teverdell-blip.workers.dev";
 
     // ── constants ─────────────────────────────────────────────────────────────
