@@ -4,66 +4,58 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
   <meta name="theme-color" content="#0f172a" />
+  <meta name="mobile-web-app-capable" content="yes" />
   <meta name="apple-mobile-web-app-capable" content="yes" />
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
   <meta name="apple-mobile-web-app-title" content="Ledge" />
-  <!-- CSP: only allows scripts from these exact CDNs and your Worker -->
   <link rel="manifest" href="manifest.json" />
   <link rel="apple-touch-icon" href="icons/icon-192.png" />
   <title>Ledge – Finance Tracker</title>
   <style>
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
-    html, body, #root { height: 100%; background: #0f172a; }
+    html, body, #root { height: 100%; background: #0f172a; font-family: 'Inter', system-ui, sans-serif; color: #e2e8f0; }
     input[type=date]::-webkit-calendar-picker-indicator { filter: invert(1); }
     select option { background: #1e293b; }
     ::-webkit-scrollbar { width: 4px; }
     ::-webkit-scrollbar-track { background: transparent; }
     ::-webkit-scrollbar-thumb { background: #334155; border-radius: 4px; }
+    @keyframes ldp { 0%,80%,100%{opacity:.2} 40%{opacity:1} }
+    @keyframes spin { to { transform: rotate(360deg); } }
+    .dot-1 { animation: ldp 1.2s ease-in-out 0s infinite; }
+    .dot-2 { animation: ldp 1.2s ease-in-out 0.2s infinite; }
+    .dot-3 { animation: ldp 1.2s ease-in-out 0.4s infinite; }
   </style>
 </head>
 <body>
-  <div id="root"></div>
+  <div id="root"><div style="display:flex;align-items:center;justify-content:center;height:100vh;color:#6EE7C0;font-size:14px;">Loading…</div></div>
 
-  <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
-  <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
-  <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/xlsx/dist/xlsx.full.min.js"></script>
-
-  <script type="text/babel" data-presets="react">
-    const { useState, useMemo, useRef, useEffect } = React;
-
-    const PROXY_URL = "https://ledge-proxy.teverdell-blip.workers.dev";
-
-    // ── constants ─────────────────────────────────────────────────────────────
+  <script>
+    // ── config ────────────────────────────────────────────────────────────────
+    const PROXY_URL   = "https://ledge-proxy.teverdell-blip.workers.dev";
+    const STORAGE_KEY = "ledge_txns_v1";
 
     const CATEGORIES = {
-      income:  ["Salary", "Freelance", "Investment", "Other Income"],
-      expense: ["Housing", "Food", "Transport", "Health", "Entertainment", "Utilities", "Shopping", "Other"],
+      income:  ["Salary","Freelance","Investment","Other Income"],
+      expense: ["Housing","Food","Transport","Health","Entertainment","Utilities","Shopping","Other"],
     };
     const ALL_CATS = [...CATEGORIES.income, ...CATEGORIES.expense];
 
     const CAT_COLORS = {
-      Salary: "#6EE7C0", Freelance: "#93C5FD", Investment: "#FCA5A5", "Other Income": "#C4B5FD",
-      Housing: "#F97316", Food: "#EAB308", Transport: "#3B82F6", Health: "#10B981",
-      Entertainment: "#8B5CF6", Utilities: "#6B7280", Shopping: "#EC4899", Other: "#9CA3AF",
+      Salary:"#6EE7C0", Freelance:"#93C5FD", Investment:"#FCA5A5", "Other Income":"#C4B5FD",
+      Housing:"#F97316", Food:"#EAB308", Transport:"#3B82F6", Health:"#10B981",
+      Entertainment:"#8B5CF6", Utilities:"#6B7280", Shopping:"#EC4899", Other:"#9CA3AF",
     };
 
-    const STORAGE_KEY = "ledge_txns_v1";
-
-    const formatAUD = n =>
-      new Intl.NumberFormat("en-AU", { style:"currency", currency:"AUD", minimumFractionDigits:0 }).format(n);
-
-    const todayStr = () => new Date().toISOString().split("T")[0];
-
     const SEED = [
-      { id:1, date:"2026-06-01", type:"income",  category:"Salary",        desc:"June payroll",   amount:5800 },
-      { id:2, date:"2026-06-03", type:"expense", category:"Housing",       desc:"Rent",           amount:2100 },
-      { id:3, date:"2026-06-05", type:"expense", category:"Food",          desc:"Groceries",      amount:210  },
-      { id:4, date:"2026-06-07", type:"expense", category:"Transport",     desc:"Fuel",           amount:95   },
-      { id:5, date:"2026-06-10", type:"income",  category:"Freelance",     desc:"Consulting gig", amount:1200 },
-      { id:6, date:"2026-06-12", type:"expense", category:"Entertainment", desc:"Streaming subs", amount:45   },
-      { id:7, date:"2026-06-14", type:"expense", category:"Health",        desc:"Physio",         amount:120  },
-      { id:8, date:"2026-06-18", type:"expense", category:"Shopping",      desc:"Baby gear",      amount:340  },
+      {id:1,date:"2026-06-01",type:"income", category:"Salary",       desc:"June payroll",   amount:5800},
+      {id:2,date:"2026-06-03",type:"expense",category:"Housing",      desc:"Rent",           amount:2100},
+      {id:3,date:"2026-06-05",type:"expense",category:"Food",         desc:"Groceries",      amount:210},
+      {id:4,date:"2026-06-07",type:"expense",category:"Transport",    desc:"Fuel",           amount:95},
+      {id:5,date:"2026-06-10",type:"income", category:"Freelance",    desc:"Consulting gig", amount:1200},
+      {id:6,date:"2026-06-12",type:"expense",category:"Entertainment",desc:"Streaming subs", amount:45},
+      {id:7,date:"2026-06-14",type:"expense",category:"Health",       desc:"Physio",         amount:120},
+      {id:8,date:"2026-06-18",type:"expense",category:"Shopping",     desc:"Baby gear",      amount:340},
     ];
 
     const PROMPTS = [
@@ -73,46 +65,77 @@
       "What's my biggest expense this month?",
     ];
 
-    // ── localStorage ──────────────────────────────────────────────────────────
+    // ── state ─────────────────────────────────────────────────────────────────
+    let state = {
+      view: "dashboard",
+      filter: "all",
+      txns: loadTxns(),
+      nextId: 1000,
+      form: { date: todayStr(), type:"expense", category:"Food", desc:"", amount:"" },
+      messages: [{role:"assistant",text:"Hi! I can see all your transactions. Ask me anything about your finances — spending patterns, savings tips, or where your money's going."}],
+      chatInput: "",
+      aiLoading: false,
+      aiError: "",
+      importStage: "idle",
+      importRows: [],
+      importEdits: {},
+      importError: "",
+      importMode: "append",
+    };
+
+    // ── helpers ───────────────────────────────────────────────────────────────
+    function todayStr() { return new Date().toISOString().split("T")[0]; }
 
     function loadTxns() {
       try { const r = localStorage.getItem(STORAGE_KEY); if (r) return JSON.parse(r); } catch {}
-      return SEED;
+      return SEED.map(t => ({...t}));
     }
+
     function saveTxns(t) {
       try { localStorage.setItem(STORAGE_KEY, JSON.stringify(t)); } catch {}
     }
 
-    // ── import helpers ────────────────────────────────────────────────────────
+    function fmt(n) {
+      return new Intl.NumberFormat("en-AU",{style:"currency",currency:"AUD",minimumFractionDigits:0}).format(n);
+    }
 
+    function setState(patch) {
+      Object.assign(state, patch);
+      render();
+    }
+
+    function setTxns(txns) {
+      saveTxns(txns);
+      setState({txns});
+    }
+
+    // ── import helpers ────────────────────────────────────────────────────────
     function normaliseDate(raw) {
       if (!raw) return todayStr();
       if (typeof raw === "number") {
         const d = XLSX.SSF.parse_date_code(raw);
-        if (d) return `${d.y}-${String(d.m).padStart(2,"0")}-${String(d.d).padStart(2,"0")}`;
+        if (d) return d.y+"-"+String(d.m).padStart(2,"0")+"-"+String(d.d).padStart(2,"0");
       }
       const s = String(raw).trim();
       if (/^\d{4}-\d{2}-\d{2}$/.test(s)) return s;
       const dmy = s.match(/^(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{4})$/);
-      if (dmy) return `${dmy[3]}-${dmy[2].padStart(2,"0")}-${dmy[1].padStart(2,"0")}`;
+      if (dmy) return dmy[3]+"-"+dmy[2].padStart(2,"0")+"-"+dmy[1].padStart(2,"0");
       const p = new Date(s); if (!isNaN(p)) return p.toISOString().split("T")[0];
       return todayStr();
     }
 
-    function guessCategory(desc = "") {
-      const d = desc.toLowerCase();
-      if (/rent|mortgage|council|strata/.test(d))                                                    return "Housing";
+    function guessCategory(desc) {
+      const d = (desc||"").toLowerCase();
+      if (/rent|mortgage|council|strata/.test(d)) return "Housing";
       if (/grocer|supermarket|coles|woolworth|aldi|iga|food|cafe|restaurant|takeaway|pizza|mcdonald|kfc/.test(d)) return "Food";
-      if (/fuel|petrol|uber|taxi|bus|train|toll|parking|car|transport/.test(d))                      return "Transport";
-      if (/gym|pharmacy|doctor|hospital|medical|health|physio|dental/.test(d))                       return "Health";
-      if (/netflix|spotify|steam|cinema|entertainment|ticketek|concert/.test(d))                     return "Entertainment";
-      if (/electric|gas|water|internet|phone|telstra|optus|utilities/.test(d))                       return "Utilities";
-      if (/salary|payroll|wage/.test(d))                                                             return "Salary";
-      if (/freelance|consult|invoice/.test(d))                                                       return "Freelance";
+      if (/fuel|petrol|uber|taxi|bus|train|toll|parking|car|transport/.test(d)) return "Transport";
+      if (/gym|pharmacy|doctor|hospital|medical|health|physio|dental/.test(d)) return "Health";
+      if (/netflix|spotify|steam|cinema|entertainment|ticketek|concert/.test(d)) return "Entertainment";
+      if (/electric|gas|water|internet|phone|telstra|optus|utilities/.test(d)) return "Utilities";
+      if (/salary|payroll|wage/.test(d)) return "Salary";
+      if (/freelance|consult|invoice/.test(d)) return "Freelance";
       return "Other";
     }
-
-    function guessType(cat) { return CATEGORIES.income.includes(cat) ? "income" : "expense"; }
 
     function findCol(headers, candidates) {
       for (const c of candidates) {
@@ -125,467 +148,344 @@
     function parseRows(rawRows) {
       if (!rawRows.length) return [];
       const headers = Object.keys(rawRows[0]);
-      const dateCol = findCol(headers, ["date","txndate","transactiondate","when"]);
-      const amtCol  = findCol(headers, ["amount","amt","value","debit","credit","sum"]);
-      const descCol = findCol(headers, ["description","desc","details","memo","narrative","name","payee","merchant"]);
-      const catCol  = findCol(headers, ["category","cat","classification"]);
-      const typeCol = findCol(headers, ["type","txntype","transactiontype","direction"]);
+      const dateCol = findCol(headers,["date","txndate","transactiondate","when"]);
+      const amtCol  = findCol(headers,["amount","amt","value","debit","credit","sum"]);
+      const descCol = findCol(headers,["description","desc","details","memo","narrative","name","payee","merchant"]);
+      const catCol  = findCol(headers,["category","cat","classification"]);
+      const typeCol = findCol(headers,["type","txntype","transactiontype","direction"]);
       return rawRows
         .filter(r => amtCol && r[amtCol] !== undefined && r[amtCol] !== "" && r[amtCol] !== null)
-        .map((r, i) => {
+        .map((r,i) => {
           const rawAmt = parseFloat(String(r[amtCol]||"0").replace(/[^0-9.\-]/g,""));
-          const amount = Math.abs(isNaN(rawAmt) ? 0 : rawAmt);
+          const amount = Math.abs(isNaN(rawAmt)?0:rawAmt);
           const desc = descCol ? String(r[descCol]||"").trim() : "";
           let category = catCol ? String(r[catCol]||"").trim() : "";
           if (!ALL_CATS.includes(category)) category = guessCategory(desc);
           let type = typeCol ? String(r[typeCol]||"").toLowerCase() : "";
-          if (type !== "income" && type !== "expense") type = rawAmt < 0 ? "expense" : guessType(category);
-          return { id:Date.now()+i, date:normaliseDate(dateCol ? r[dateCol] : ""), amount, desc:desc||"Imported transaction", category, type };
+          if (type !== "income" && type !== "expense") type = rawAmt < 0 ? "expense" : (CATEGORIES.income.includes(category)?"income":"expense");
+          return {id:Date.now()+i, date:normaliseDate(dateCol?r[dateCol]:""), amount, desc:desc||"Imported transaction", category, type};
         })
         .filter(r => r.amount > 0);
     }
 
-    // ── sub-components ────────────────────────────────────────────────────────
+    // ── derived data ──────────────────────────────────────────────────────────
+    function getSorted() { return [...state.txns].sort((a,b)=>b.date.localeCompare(a.date)); }
+    function getIncome()   { return state.txns.filter(t=>t.type==="income").reduce((s,t)=>s+t.amount,0); }
+    function getExpenses() { return state.txns.filter(t=>t.type==="expense").reduce((s,t)=>s+t.amount,0); }
 
-    function SparkBar({ data, max }) {
-      return (
-        <div style={{ display:"flex", alignItems:"flex-end", gap:3, height:36 }}>
-          {data.map((v,i) => (
-            <div key={i} style={{ flex:1, height:`${Math.max(8,(v/max)*36)}px`, background:i===data.length-1?"#6EE7C0":"#1e293b", borderRadius:3, transition:"height .3s ease" }} />
-          ))}
-        </div>
-      );
+    function getCatBreakdown() {
+      const map = {};
+      state.txns.filter(t=>t.type==="expense").forEach(t=>{ map[t.category]=(map[t.category]||0)+t.amount; });
+      return Object.entries(map).map(([label,value])=>({label,value,color:CAT_COLORS[label]||"#6B7280"})).sort((a,b)=>b.value-a.value);
     }
 
-    function DonutChart({ slices, size=120 }) {
-      const total = slices.reduce((s,x)=>s+x.value,0); let cum=0;
-      const paths = slices.map(sl => {
-        const start=(cum/total)*360; cum+=sl.value; const end=(cum/total)*360;
-        const r=size/2-14, cx=size/2, cy=size/2, toRad=d=>((d-90)*Math.PI)/180;
-        const x1=cx+r*Math.cos(toRad(start)), y1=cy+r*Math.sin(toRad(start));
-        const x2=cx+r*Math.cos(toRad(end)),   y2=cy+r*Math.sin(toRad(end));
-        return <path key={sl.label} d={`M ${cx} ${cy} L ${x1} ${y1} A ${r} ${r} 0 ${end-start>180?1:0} 1 ${x2} ${y2} Z`} fill={sl.color} opacity={0.9}/>;
-      });
-      return <svg width={size} height={size}>{paths}<circle cx={size/2} cy={size/2} r={size/2-28} fill="#0f172a"/></svg>;
+    function getSparkData() {
+      const days = Array.from({length:7},(_,i)=>{ const d=new Date(); d.setDate(d.getDate()-(6-i)); return d.toISOString().split("T")[0]; });
+      return days.map(d=>state.txns.filter(t=>t.date===d&&t.type==="expense").reduce((s,t)=>s+t.amount,0));
     }
 
-    function TypingDots() {
-      return (
-        <div style={{ display:"flex", gap:4, alignItems:"center", padding:"4px 0" }}>
-          {[0,1,2].map(i=><div key={i} style={{ width:6, height:6, borderRadius:"50%", background:"#6EE7C0", animation:`ldp 1.2s ease-in-out ${i*.2}s infinite` }}/>)}
-          <style>{`@keyframes ldp{0%,80%,100%{opacity:.2}40%{opacity:1}}`}</style>
-        </div>
-      );
+    function getImportRow(idx) { return Object.assign({},state.importRows[idx],state.importEdits[idx]||{}); }
+
+    // ── actions ───────────────────────────────────────────────────────────────
+    function addTxn() {
+      const f = state.form;
+      if (!f.desc||!f.amount||isNaN(+f.amount)) return;
+      const newTxns = [...state.txns, {id:state.nextId, date:f.date, type:f.type, category:f.category, desc:f.desc, amount:parseFloat(f.amount)}];
+      saveTxns(newTxns);
+      setState({txns:newTxns, nextId:state.nextId+1, form:{date:todayStr(),type:"expense",category:"Food",desc:"",amount:""}, view:"transactions"});
     }
 
-    // ── main app ──────────────────────────────────────────────────────────────
+    function deleteTxn(id) { setTxns(state.txns.filter(t=>t.id!==id)); }
 
-    function App() {
-      const [txns, setTxnsRaw] = useState(loadTxns);
-      const setTxns = updater => setTxnsRaw(prev => {
-        const next = typeof updater === "function" ? updater(prev) : updater;
-        saveTxns(next); return next;
-      });
-
-      const [view,      setView]      = useState("dashboard");
-      const [filter,    setFilter]    = useState("all");
-      const [form,      setForm]      = useState({ date:todayStr(), type:"expense", category:"Food", desc:"", amount:"" });
-      const [nextId,    setNextId]    = useState(1000);
-
-      const [messages,  setMessages]  = useState([{ role:"assistant", text:"Hi! I can see all your transactions. Ask me anything about your finances — spending patterns, savings tips, or where your money's going." }]);
-      const [chatInput, setChatInput] = useState("");
-      const [aiLoading, setAiLoading] = useState(false);
-      const [aiError,   setAiError]   = useState("");
-      const chatEndRef = useRef(null);
-
-      const [importStage, setImportStage] = useState("idle");
-      const [importRows,  setImportRows]  = useState([]);
-      const [importEdits, setImportEdits] = useState({});
-      const [importError, setImportError] = useState("");
-      const [importMode,  setImportMode]  = useState("append");
-      const fileInputRef = useRef(null);
-
-      useEffect(()=>{ if(view==="ask") chatEndRef.current?.scrollIntoView({behavior:"smooth"}); },[messages,view]);
-
-      const sorted   = useMemo(()=>[...txns].sort((a,b)=>b.date.localeCompare(a.date)),[txns]);
-      const income   = useMemo(()=>txns.filter(t=>t.type==="income").reduce((s,t)=>s+t.amount,0),[txns]);
-      const expenses = useMemo(()=>txns.filter(t=>t.type==="expense").reduce((s,t)=>s+t.amount,0),[txns]);
-      const net      = income - expenses;
-
-      const catBreakdown = useMemo(()=>{
-        const map={};
-        txns.filter(t=>t.type==="expense").forEach(t=>{ map[t.category]=(map[t.category]||0)+t.amount; });
-        return Object.entries(map).map(([label,value])=>({label,value,color:CAT_COLORS[label]||"#6B7280"})).sort((a,b)=>b.value-a.value);
-      },[txns]);
-
-      const sparkData = useMemo(()=>{
-        const days=Array.from({length:7},(_,i)=>{ const d=new Date(); d.setDate(d.getDate()-(6-i)); return d.toISOString().split("T")[0]; });
-        return days.map(d=>txns.filter(t=>t.date===d&&t.type==="expense").reduce((s,t)=>s+t.amount,0));
-      },[txns]);
-
-      const filteredTxns = useMemo(()=>filter==="all"?sorted:sorted.filter(t=>t.type===filter),[sorted,filter]);
-
-      const addTxn = () => {
-        if (!form.desc||!form.amount||isNaN(+form.amount)) return;
-        setTxns(prev=>[...prev,{...form,amount:parseFloat(form.amount),id:nextId}]);
-        setNextId(n=>n+1);
-        setForm({date:todayStr(),type:"expense",category:"Food",desc:"",amount:""});
-        setView("transactions");
-      };
-
-      const deleteTxn = id => setTxns(prev=>prev.filter(t=>t.id!==id));
-
-      // Import
-      const handleFile = e => {
-        const file=e.target.files?.[0]; if(!file) return;
-        setImportError("");
-        const reader=new FileReader();
-        reader.onload=ev=>{
-          try {
-            const data=new Uint8Array(ev.target.result);
-            const wb=XLSX.read(data,{type:"array",cellDates:false});
-            const ws=wb.Sheets[wb.SheetNames[0]];
-            const raw=XLSX.utils.sheet_to_json(ws,{defval:""});
-            if(!raw.length){setImportError("No data rows found.");return;}
-            const parsed=parseRows(raw);
-            if(!parsed.length){setImportError("Couldn't find an amount column.");return;}
-            setImportRows(parsed); setImportEdits({}); setImportStage("preview");
-          } catch { setImportError("Couldn't read that file. Make sure it's a valid .xlsx or .csv."); }
-        };
-        reader.readAsArrayBuffer(file);
-        e.target.value="";
-      };
-
-      const getRow     = idx => ({...importRows[idx],...importEdits[idx]});
-      const updateEdit = (idx,field,value) => setImportEdits(prev=>({...prev,[idx]:{...prev[idx],[field]:value}}));
-
-      const confirmImport = () => {
-        const finalRows=importRows.map((_,i)=>{ const r=getRow(i); return {id:Date.now()+i,date:r.date,type:r.type,category:r.category,desc:r.desc,amount:r.amount}; });
-        setTxns(prev=>importMode==="replace"?finalRows:[...prev,...finalRows]);
-        setImportStage("done"); setImportRows([]); setImportEdits({});
-      };
-
-      const resetImport = () => { setImportStage("idle"); setImportRows([]); setImportEdits({}); setImportError(""); };
-
-      // AI — calls proxy, not Anthropic directly
-      const buildSummary = () => {
-        const catMap={};
-        txns.filter(t=>t.type==="expense").forEach(t=>{ catMap[t.category]=(catMap[t.category]||0)+t.amount; });
-        const catLines=Object.entries(catMap).sort((a,b)=>b[1]-a[1]).map(([k,v])=>`  ${k}: ${formatAUD(v)}`).join("\n");
-        return `Financial Data (AUD):
-- Income: ${formatAUD(income)}  Expenses: ${formatAUD(expenses)}  Net: ${formatAUD(net)}
-- Savings rate: ${income>0?Math.round((net/income)*100):0}%
-Expense breakdown:\n${catLines}
-All transactions:\n${sorted.map(t=>`  [${t.date}] ${t.type==="income"?"+":"-"}${formatAUD(t.amount)} — ${t.desc} (${t.category})`).join("\n")}`;
-      };
-
-      const sendMessage = async (text) => {
-        const userText=text||chatInput.trim(); if(!userText||aiLoading) return;
-        setChatInput(""); setAiError("");
-        const newMsgs=[...messages,{role:"user",text:userText}];
-        setMessages(newMsgs); setAiLoading(true);
+    function handleFileInput(input) {
+      const file = input.files[0]; if (!file) return;
+      setState({importError:""});
+      const reader = new FileReader();
+      reader.onload = ev => {
         try {
-          const res = await fetch(PROXY_URL, {
-            method:"POST",
-            headers:{"Content-Type":"application/json"},
-            // No API key here — the Worker holds it
-            body:JSON.stringify({
-              system:`You are a friendly personal finance advisor. Be concise, specific, use AUD, reference their actual numbers. 2–4 sentences unless a breakdown helps.\n\n${buildSummary()}`,
-              messages:newMsgs.map(m=>({role:m.role==="assistant"?"assistant":"user",content:m.text})),
-            }),
-          });
-          if(!res.ok) {
-            const err=await res.json().catch(()=>({}));
-            throw new Error(err.error||`HTTP ${res.status}`);
-          }
-          const data=await res.json();
-          setMessages(prev=>[...prev,{role:"assistant",text:data.text||"No response."}]);
-        } catch(err) {
-          setAiError(err.message||"Something went wrong.");
-          setMessages(prev=>[...prev,{role:"assistant",text:"Sorry, I couldn't reach the server. Check your connection and try again."}]);
-        } finally { setAiLoading(false); }
+          const data = new Uint8Array(ev.target.result);
+          const wb = XLSX.read(data,{type:"array",cellDates:false});
+          const ws = wb.Sheets[wb.SheetNames[0]];
+          const raw = XLSX.utils.sheet_to_json(ws,{defval:""});
+          if (!raw.length) { setState({importError:"No data rows found."}); return; }
+          const parsed = parseRows(raw);
+          if (!parsed.length) { setState({importError:"Couldn't find an amount column."}); return; }
+          setState({importRows:parsed, importEdits:{}, importStage:"preview"});
+        } catch(e) { setState({importError:"Couldn't read that file. Make sure it's a valid .xlsx or .csv."}); }
       };
+      reader.readAsArrayBuffer(file);
+      input.value="";
+    }
 
-      // ── styles ────────────────────────────────────────────────────────────
+    function confirmImport() {
+      const finalRows = state.importRows.map((_,i)=>{ const r=getImportRow(i); return {id:Date.now()+i,date:r.date,type:r.type,category:r.category,desc:r.desc,amount:r.amount}; });
+      const newTxns = state.importMode==="replace" ? finalRows : [...state.txns,...finalRows];
+      saveTxns(newTxns);
+      setState({txns:newTxns, importStage:"done", importRows:[], importEdits:{}});
+    }
 
-      const s = {
-        app:    { background:"#0f172a", minHeight:"100vh", fontFamily:"'Inter',system-ui,sans-serif", color:"#e2e8f0", maxWidth:480, margin:"0 auto" },
-        header: { padding:"env(safe-area-inset-top,20px) 24px 0", background:"#0f172a", position:"sticky", top:0, zIndex:10 },
-        wm:     { fontSize:13, fontWeight:700, letterSpacing:"0.15em", textTransform:"uppercase", color:"#6EE7C0", marginBottom:2, paddingTop:8 },
-        hl:     { fontSize:22, fontWeight:800, color:"#f8fafc", letterSpacing:"-0.03em", marginBottom:20 },
-        nav:    { display:"flex", borderBottom:"1px solid #1e293b" },
-        nb: (a,c) => ({ flex:1, padding:"10px 0", background:"none", border:"none", borderBottom:a?`2px solid ${c||"#6EE7C0"}`:"2px solid transparent", color:a?(c||"#6EE7C0"):"#64748b", fontWeight:600, fontSize:11, cursor:"pointer", letterSpacing:"0.04em" }),
-        body:   { padding:"20px 24px 100px" },
-        card:   { background:"#1e293b", borderRadius:16, padding:"18px 20px", marginBottom:14 },
-        lbl:    { fontSize:11, fontWeight:700, letterSpacing:"0.1em", textTransform:"uppercase", color:"#64748b", marginBottom:4 },
-        tr:     { display:"flex", alignItems:"center", gap:12, padding:"12px 0", borderBottom:"1px solid #1e293b" },
-        dot: c  => ({ width:10, height:10, borderRadius:"50%", background:c, flexShrink:0 }),
-        pill: c => ({ display:"inline-block", background:c+"22", color:c, borderRadius:20, padding:"2px 10px", fontSize:11, fontWeight:700 }),
-        inp:    { width:"100%", background:"#1e293b", border:"1px solid #334155", borderRadius:10, color:"#f1f5f9", padding:"12px 14px", fontSize:15, marginBottom:12, outline:"none", boxSizing:"border-box" },
-        sel:    { width:"100%", background:"#1e293b", border:"1px solid #334155", borderRadius:10, color:"#f1f5f9", padding:"12px 14px", fontSize:15, marginBottom:12, outline:"none", boxSizing:"border-box" },
-        btn: (bg="#6EE7C0",fg="#0f172a") => ({ width:"100%", padding:"14px", borderRadius:12, border:"none", fontWeight:700, fontSize:15, cursor:"pointer", background:bg, color:fg, marginBottom:10 }),
-        chip: a => ({ padding:"6px 14px", borderRadius:20, border:`1px solid ${a?"#6EE7C0":"#334155"}`, background:a?"#6EE7C022":"none", color:a?"#6EE7C0":"#64748b", fontSize:12, fontWeight:600, cursor:"pointer" }),
-        mini:   { background:"#0f172a", border:"1px solid #334155", borderRadius:6, color:"#f1f5f9", padding:"5px 8px", fontSize:12, outline:"none", width:"100%" },
-      };
+    function resetImport() { setState({importStage:"idle",importRows:[],importEdits:{},importError:""}); }
+
+    function buildSummary() {
+      const income = getIncome(), expenses = getExpenses(), net = income - expenses;
+      const catMap = {};
+      state.txns.filter(t=>t.type==="expense").forEach(t=>{ catMap[t.category]=(catMap[t.category]||0)+t.amount; });
+      const catLines = Object.entries(catMap).sort((a,b)=>b[1]-a[1]).map(([k,v])=>"  "+k+": "+fmt(v)).join("\n");
+      const sorted = getSorted();
+      return "Financial Data (AUD):\n- Income: "+fmt(income)+"  Expenses: "+fmt(expenses)+"  Net: "+fmt(net)+"\n- Savings rate: "+(income>0?Math.round((net/income)*100):0)+"%\nExpense breakdown:\n"+catLines+"\nAll transactions:\n"+sorted.map(t=>"  ["+t.date+"] "+(t.type==="income"?"+":"-")+fmt(t.amount)+" — "+t.desc+" ("+t.category+")").join("\n");
+    }
+
+    async function sendMessage(text) {
+      const userText = text || state.chatInput.trim();
+      if (!userText || state.aiLoading) return;
+      const newMsgs = [...state.messages,{role:"user",text:userText}];
+      setState({messages:newMsgs, chatInput:"", aiLoading:true, aiError:""});
+      try {
+        const res = await fetch(PROXY_URL, {
+          method:"POST",
+          headers:{"Content-Type":"application/json"},
+          body:JSON.stringify({
+            system:"You are a friendly personal finance advisor. Be concise, specific, use AUD, reference their actual numbers. 2–4 sentences unless a breakdown helps.\n\n"+buildSummary(),
+            messages:newMsgs.map(m=>({role:m.role==="assistant"?"assistant":"user",content:m.text})),
+          }),
+        });
+        if (!res.ok) { const e=await res.json().catch(()=>({})); throw new Error(e.error||"HTTP "+res.status); }
+        const data = await res.json();
+        setState({messages:[...newMsgs,{role:"assistant",text:data.text||"No response."}], aiLoading:false});
+      } catch(err) {
+        setState({messages:[...newMsgs,{role:"assistant",text:"Sorry, couldn't reach the server. Check your connection."}], aiLoading:false, aiError:err.message||"Error"});
+      }
+    }
+
+    // ── svg donut ─────────────────────────────────────────────────────────────
+    function donutSVG(slices, size) {
+      size = size||120;
+      const total = slices.reduce((s,x)=>s+x.value,0); if(!total) return "";
+      let cum=0, paths="";
+      slices.forEach(sl=>{
+        const start=(cum/total)*360; cum+=sl.value; const end=(cum/total)*360;
+        const r=size/2-14,cx=size/2,cy=size/2,toRad=d=>((d-90)*Math.PI)/180;
+        const x1=cx+r*Math.cos(toRad(start)),y1=cy+r*Math.sin(toRad(start));
+        const x2=cx+r*Math.cos(toRad(end)),  y2=cy+r*Math.sin(toRad(end));
+        const large=end-start>180?1:0;
+        paths+=`<path d="M ${cx} ${cy} L ${x1} ${y1} A ${r} ${r} 0 ${large} 1 ${x2} ${y2} Z" fill="${sl.color}" opacity="0.9"/>`;
+      });
+      return `<svg width="${size}" height="${size}">${paths}<circle cx="${size/2}" cy="${size/2}" r="${size/2-28}" fill="#0f172a"/></svg>`;
+    }
+
+    // ── render helpers ────────────────────────────────────────────────────────
+    function pill(color, text) {
+      return `<span style="display:inline-block;background:${color}22;color:${color};border-radius:20px;padding:2px 10px;font-size:11px;font-weight:700">${text}</span>`;
+    }
+
+    function btn(label, onclick, bg, fg) {
+      bg=bg||"#6EE7C0"; fg=fg||"#0f172a";
+      return `<button onclick="${onclick}" style="width:100%;padding:14px;border-radius:12px;border:none;font-weight:700;font-size:15px;cursor:pointer;background:${bg};color:${fg};margin-bottom:10px">${label}</button>`;
+    }
+
+    function miniInput(field, idx, value, type) {
+      type=type||"text";
+      return `<input type="${type}" value="${(value||"").toString().replace(/"/g,'&quot;')}" oninput="updateImportEdit(${idx},'${field}',this.value)" style="background:#0f172a;border:1px solid #334155;border-radius:6px;color:#f1f5f9;padding:5px 8px;font-size:12px;outline:none;width:100%">`;
+    }
+
+    function miniSelect(field, idx, options, current) {
+      return `<select onchange="updateImportEdit(${idx},'${field}',this.value)" style="background:#0f172a;border:1px solid #334155;border-radius:6px;color:#f1f5f9;padding:5px 8px;font-size:12px;outline:none;width:100%">${options.map(o=>`<option value="${o}"${o===current?" selected":""}>${o}</option>`).join("")}</select>`;
+    }
+
+    // ── global handlers ───────────────────────────────────────────────────────
+    window.setView       = v => setState({view:v, ...(v==="import"?{importStage:"idle",importRows:[],importEdits:{},importError:""}:{})});
+    window.setFilter     = f => setState({filter:f});
+    window.setImportMode = m => setState({importMode:m});
+    window.deleteTxn     = id => deleteTxn(id);
+    window.addTxn        = () => addTxn();
+    window.confirmImport = () => confirmImport();
+    window.resetImport   = () => resetImport();
+    window.sendPrompt    = t => sendMessage(t);
+    window.sendChat      = () => sendMessage(null);
+
+    window.updateForm = (field, value) => {
+      const form = Object.assign({},state.form,{[field]:value});
+      if (field==="type") form.category = value==="income"?"Salary":"Food";
+      setState({form});
+    };
+
+    window.updateImportEdit = (idx, field, value) => {
+      const importEdits = Object.assign({},state.importEdits,{[idx]:Object.assign({},state.importEdits[idx]||{},{[field]:field==="amount"?parseFloat(value)||0:value})});
+      setState({importEdits});
+    };
+
+    window.handleFileChange = input => handleFileInput(input);
+
+    window.onChatKey = e => {
+      if (e.key==="Enter"&&!e.shiftKey) { e.preventDefault(); sendMessage(null); }
+    };
+
+    window.updateChatInput = v => { state.chatInput=v; };
+
+    // ── main render ───────────────────────────────────────────────────────────
+    function render() {
+      const {view,filter,form,messages,chatInput,aiLoading,aiError,importStage,importRows,importEdits,importMode,importError} = state;
+      const sorted   = getSorted();
+      const income   = getIncome();
+      const expenses = getExpenses();
+      const net      = income - expenses;
+      const cats     = getCatBreakdown();
+      const spark    = getSparkData();
+      const sparkMax = Math.max(...spark,1);
 
       const NAV = [
-        {id:"dashboard",    label:"Overview"},
-        {id:"transactions", label:"Transactions"},
-        {id:"add",          label:"+ Add"},
-        {id:"import",       label:"↑ Import", col:"#38bdf8"},
-        {id:"ask",          label:"✦ Ask",    col:"#a78bfa"},
+        {id:"dashboard",label:"Overview",col:"#6EE7C0"},
+        {id:"transactions",label:"Transactions",col:"#6EE7C0"},
+        {id:"add",label:"+ Add",col:"#6EE7C0"},
+        {id:"import",label:"↑ Import",col:"#38bdf8"},
+        {id:"ask",label:"✦ Ask",col:"#a78bfa"},
       ];
 
-      return (
-        <div style={s.app}>
-          <div style={s.header}>
-            <div style={s.wm}>Ledge</div>
-            <div style={s.hl}>Your money, clear.</div>
-            <div style={s.nav}>
-              {NAV.map(({id,label,col})=>(
-                <button key={id} style={s.nb(view===id,col)} onClick={()=>{ setView(id); if(id==="import") resetImport(); }}>{label}</button>
-              ))}
+      const navHTML = NAV.map(n=>`<button onclick="setView('${n.id}')" style="flex:1;padding:10px 0;background:none;border:none;border-bottom:${view===n.id?`2px solid ${n.col}`:"2px solid transparent"};color:${view===n.id?n.col:"#64748b"};font-weight:600;font-size:11px;cursor:pointer;letter-spacing:0.04em">${n.label}</button>`).join("");
+
+      let bodyHTML = "";
+
+      // ── DASHBOARD ──
+      if (view==="dashboard") {
+        const sparkBars = spark.map((v,i)=>`<div style="flex:1;height:${Math.max(8,(v/sparkMax)*36)}px;background:${i===spark.length-1?"#6EE7C0":"#1e293b"};border-radius:3px"></div>`).join("");
+        const catRows = cats.slice(0,5).map(c=>`<div style="display:flex;justify-content:space-between;margin-bottom:8px"><div style="display:flex;align-items:center;gap:7px"><div style="width:10px;height:10px;border-radius:50%;background:${c.color};flex-shrink:0"></div><span style="font-size:12px;color:#94a3b8">${c.label}</span></div><span style="font-size:12px;font-weight:700;color:#e2e8f0">${fmt(c.value)}</span></div>`).join("");
+        const recentRows = sorted.slice(0,4).map(t=>`<div style="display:flex;align-items:center;gap:12px;padding:12px 0;border-bottom:1px solid #1e293b"><div style="width:10px;height:10px;border-radius:50%;background:${CAT_COLORS[t.category]||"#6B7280"};flex-shrink:0"></div><div style="flex:1"><div style="font-size:14px;font-weight:600;color:#f1f5f9">${t.desc}</div><div style="font-size:11px;color:#64748b">${t.category} · ${t.date}</div></div><div style="font-size:15px;font-weight:700;color:${t.type==="income"?"#6EE7C0":"#F87171"}">${t.type==="income"?"+":"-"}${fmt(t.amount)}</div></div>`).join("");
+
+        bodyHTML = `
+          <div style="background:${net>=0?"#0d2d22":"#2d0f0f"};border-radius:16px;padding:18px 20px;margin-bottom:14px;border:1px solid ${net>=0?"#6EE7C044":"#F87171aa"}">
+            <div style="font-size:11px;font-weight:700;letter-spacing:0.1em;text-transform:uppercase;color:#64748b;margin-bottom:4px">Net this period</div>
+            <div style="font-size:32px;font-weight:800;letter-spacing:-0.04em;color:${net>=0?"#6EE7C0":"#F87171"}">${fmt(net)}</div>
+            <div style="font-size:12px;color:#64748b;margin-top:4px">${net>=0?fmt(net)+" ahead of spending":fmt(Math.abs(net))+" over income"}</div>
+          </div>
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:14px">
+            <div style="background:#1e293b;border-radius:16px;padding:18px 20px"><div style="font-size:11px;font-weight:700;letter-spacing:0.1em;text-transform:uppercase;color:#64748b;margin-bottom:4px">Income</div><div style="font-size:22px;font-weight:800;color:#6EE7C0;letter-spacing:-0.03em">${fmt(income)}</div></div>
+            <div style="background:#1e293b;border-radius:16px;padding:18px 20px"><div style="font-size:11px;font-weight:700;letter-spacing:0.1em;text-transform:uppercase;color:#64748b;margin-bottom:4px">Spent</div><div style="font-size:22px;font-weight:800;color:#F87171;letter-spacing:-0.03em">${fmt(expenses)}</div></div>
+          </div>
+          <div style="background:#1e293b;border-radius:16px;padding:18px 20px;margin-bottom:14px">
+            <div style="display:flex;justify-content:space-between;margin-bottom:10px"><div style="font-size:11px;font-weight:700;letter-spacing:0.1em;text-transform:uppercase;color:#64748b">7-day spending</div><div style="font-size:11px;color:#64748b">today →</div></div>
+            <div style="display:flex;align-items:flex-end;gap:3px;height:36px">${sparkBars}</div>
+          </div>
+          ${cats.length?`<div style="background:#1e293b;border-radius:16px;padding:18px 20px;margin-bottom:14px"><div style="font-size:11px;font-weight:700;letter-spacing:0.1em;text-transform:uppercase;color:#64748b;margin-bottom:14px">Spending breakdown</div><div style="display:flex;gap:16px;align-items:center">${donutSVG(cats)}<div style="flex:1">${catRows}</div></div></div>`:""}
+          <div style="font-size:11px;font-weight:700;letter-spacing:0.1em;text-transform:uppercase;color:#64748b;margin-bottom:10px;margin-top:4px">Recent</div>
+          ${recentRows}`;
+      }
+
+      // ── TRANSACTIONS ──
+      else if (view==="transactions") {
+        const chips = ["all","income","expense"].map(f=>`<button onclick="setFilter('${f}')" style="padding:6px 14px;border-radius:20px;border:1px solid ${filter===f?"#6EE7C0":"#334155"};background:${filter===f?"#6EE7C022":"none"};color:${filter===f?"#6EE7C0":"#64748b"};font-size:12px;font-weight:600;cursor:pointer">${f.charAt(0).toUpperCase()+f.slice(1)}</button>`).join("");
+        const rows = sorted.filter(t=>filter==="all"||t.type===filter).map(t=>`<div style="display:flex;align-items:center;gap:12px;padding:12px 0;border-bottom:1px solid #1e293b"><div style="width:10px;height:10px;border-radius:50%;background:${CAT_COLORS[t.category]||"#6B7280"};flex-shrink:0"></div><div style="flex:1"><div style="font-size:14px;font-weight:600;color:#f1f5f9">${t.desc}</div><div style="display:flex;gap:6px;margin-top:2px">${pill(CAT_COLORS[t.category]||"#6B7280",t.category)}<span style="font-size:11px;color:#475569">${t.date}</span></div></div><div style="text-align:right"><div style="font-size:15px;font-weight:700;color:${t.type==="income"?"#6EE7C0":"#F87171"}">${t.type==="income"?"+":"-"}${fmt(t.amount)}</div><button onclick="deleteTxn(${t.id})" style="background:none;border:none;color:#334155;cursor:pointer;font-size:12px;padding:0;margin-top:2px">remove</button></div></div>`).join("");
+        bodyHTML = `<div style="display:flex;gap:8px;margin-bottom:16px">${chips}</div>${rows||`<div style="text-align:center;color:#475569;padding-top:48px;font-size:14px">No transactions yet. Add one →</div>`}`;
+      }
+
+      // ── ADD ──
+      else if (view==="add") {
+        const typeBtns = ["expense","income"].map(t=>`<button onclick="updateForm('type','${t}')" style="padding:12px;border-radius:12px;border:2px solid ${form.type===t?(t==="income"?"#6EE7C0":"#F87171"):"#334155"};background:${form.type===t?(t==="income"?"#6EE7C022":"#F8717122"):"#1e293b"};color:${form.type===t?(t==="income"?"#6EE7C0":"#F87171"):"#64748b"};font-weight:700;font-size:14px;cursor:pointer;text-transform:capitalize">${t}</button>`).join("");
+        const catOptions = CATEGORIES[form.type].map(c=>`<option value="${c}"${c===form.category?" selected":""}>${c}</option>`).join("");
+        bodyHTML = `
+          <div style="font-size:11px;font-weight:700;letter-spacing:0.1em;text-transform:uppercase;color:#64748b;margin-bottom:14px">Log a transaction</div>
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:16px">${typeBtns}</div>
+          <input type="date" value="${form.date}" oninput="updateForm('date',this.value)" style="width:100%;background:#1e293b;border:1px solid #334155;border-radius:10px;color:#f1f5f9;padding:12px 14px;font-size:15px;margin-bottom:12px;outline:none;box-sizing:border-box">
+          <select onchange="updateForm('category',this.value)" style="width:100%;background:#1e293b;border:1px solid #334155;border-radius:10px;color:#f1f5f9;padding:12px 14px;font-size:15px;margin-bottom:12px;outline:none;box-sizing:border-box">${catOptions}</select>
+          <input type="text" placeholder="Description" value="${(form.desc||"").replace(/"/g,'&quot;')}" oninput="updateForm('desc',this.value)" style="width:100%;background:#1e293b;border:1px solid #334155;border-radius:10px;color:#f1f5f9;padding:12px 14px;font-size:15px;margin-bottom:12px;outline:none;box-sizing:border-box">
+          <input type="number" placeholder="Amount (AUD)" value="${form.amount||""}" oninput="updateForm('amount',this.value)" min="0" step="0.01" style="width:100%;background:#1e293b;border:1px solid #334155;border-radius:10px;color:#f1f5f9;padding:12px 14px;font-size:15px;margin-bottom:12px;outline:none;box-sizing:border-box">
+          ${btn("Save transaction","addTxn()")}
+          ${btn("Cancel","setView('dashboard')","#1e293b","#94a3b8")}`;
+      }
+
+      // ── IMPORT ──
+      else if (view==="import") {
+        if (importStage==="idle") {
+          const modeBtns = [["append","Add to existing"],["replace","Replace all"]].map(([val,label])=>`<button onclick="setImportMode('${val}')" style="padding:12px;border-radius:12px;border:2px solid ${importMode===val?"#38bdf8":"#334155"};background:${importMode===val?"#0c2a3a":"#1e293b"};color:${importMode===val?"#38bdf8":"#64748b"};font-weight:700;font-size:13px;cursor:pointer">${label}</button>`).join("");
+          bodyHTML = `
+            <div style="font-size:11px;font-weight:700;letter-spacing:0.1em;text-transform:uppercase;color:#38bdf8;margin-bottom:4px">Import transactions</div>
+            <div style="font-size:12px;color:#475569;margin-bottom:20px">Accepts .xlsx, .xls, or .csv</div>
+            <label style="display:block;border:2px dashed #334155;border-radius:16px;padding:40px 24px;text-align:center;cursor:pointer;margin-bottom:16px">
+              <div style="font-size:32px;margin-bottom:10px">📂</div>
+              <div style="font-weight:700;color:#e2e8f0;margin-bottom:6px">Tap to choose a file</div>
+              <div style="font-size:12px;color:#475569">or drag and drop here</div>
+              <input type="file" accept=".xlsx,.xls,.csv" style="display:none" onchange="handleFileChange(this)">
+            </label>
+            ${importError?`<div style="background:#2d0f0f;border:1px solid #F87171;border-radius:12px;padding:12px 16px;color:#F87171;font-size:13px;margin-bottom:16px">${importError}</div>`:""}
+            <div style="background:#1e293b;border-radius:16px;padding:18px 20px;margin-bottom:14px">
+              <div style="font-size:11px;font-weight:700;letter-spacing:0.1em;text-transform:uppercase;color:#64748b;margin-bottom:10px">Expected columns</div>
+              <div style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:10px">${["date","amount","description","category","type"].map(c=>`<span style="background:#0f172a;border-radius:6px;padding:3px 10px;font-size:11px;color:#38bdf8;font-family:monospace">${c}</span>`).join("")}</div>
+              <div style="font-size:12px;color:#475569;line-height:1.7">Column names are flexible. Missing category/type columns are auto-guessed. ANZ, CBA, NAB, and Westpac CSV exports typically work out of the box.</div>
             </div>
+            <div style="font-size:11px;font-weight:700;letter-spacing:0.1em;text-transform:uppercase;color:#64748b;margin-bottom:10px">Import mode</div>
+            <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">${modeBtns}</div>`;
+        } else if (importStage==="preview") {
+          const rowsHTML = importRows.map((_,idx)=>{
+            const r = getImportRow(idx);
+            const catOpts = ALL_CATS.map(c=>`<option value="${c}"${c===r.category?" selected":""}>${c}</option>`).join("");
+            return `<div style="background:#1e293b;border-radius:12px;padding:12px 14px;margin-bottom:10px">
+              <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:8px">
+                <div><div style="font-size:10px;color:#64748b;margin-bottom:3px">DATE</div>${miniInput("date",idx,r.date)}</div>
+                <div><div style="font-size:10px;color:#64748b;margin-bottom:3px">AMOUNT</div>${miniInput("amount",idx,r.amount,"number")}</div>
+              </div>
+              <div style="margin-bottom:8px"><div style="font-size:10px;color:#64748b;margin-bottom:3px">DESCRIPTION</div>${miniInput("desc",idx,r.desc)}</div>
+              <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">
+                <div><div style="font-size:10px;color:#64748b;margin-bottom:3px">CATEGORY</div><select onchange="updateImportEdit(${idx},'category',this.value)" style="background:#0f172a;border:1px solid #334155;border-radius:6px;color:#f1f5f9;padding:5px 8px;font-size:12px;outline:none;width:100%">${catOpts}</select></div>
+                <div><div style="font-size:10px;color:#64748b;margin-bottom:3px">TYPE</div><select onchange="updateImportEdit(${idx},'type',this.value)" style="background:#0f172a;border:1px solid #334155;border-radius:6px;color:#f1f5f9;padding:5px 8px;font-size:12px;outline:none;width:100%"><option value="expense"${r.type==="expense"?" selected":""}>Expense</option><option value="income"${r.type==="income"?" selected":""}>Income</option></select></div>
+              </div>
+            </div>`;
+          }).join("");
+          bodyHTML = `
+            <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:4px">
+              <div style="font-size:11px;font-weight:700;letter-spacing:0.1em;text-transform:uppercase;color:#38bdf8">Preview — ${importRows.length} rows</div>
+              <button onclick="resetImport()" style="background:none;border:none;color:#475569;font-size:12px;cursor:pointer">← back</button>
+            </div>
+            <div style="font-size:12px;color:#475569;margin-bottom:16px">Edit anything before confirming.</div>
+            ${rowsHTML}
+            ${btn("Confirm — import "+importRows.length+" transactions","confirmImport()","#38bdf8")}
+            ${btn("Cancel","resetImport()","#1e293b","#94a3b8")}`;
+        } else {
+          bodyHTML = `<div style="text-align:center;padding-top:40px"><div style="font-size:48px;margin-bottom:16px">✓</div><div style="font-weight:800;font-size:20px;color:#e2e8f0;margin-bottom:8px">Import complete</div><div style="font-size:14px;color:#64748b;margin-bottom:32px">Your transactions have been updated.</div><button onclick="setView('dashboard')" style="padding:12px 28px;border-radius:12px;border:none;font-weight:700;font-size:15px;cursor:pointer;background:#38bdf8;color:#0f172a">Go to overview</button></div>`;
+        }
+      }
+
+      // ── ASK AI ──
+      else if (view==="ask") {
+        const msgHTML = messages.map(m=>`<div style="display:flex;justify-content:${m.role==="user"?"flex-end":"flex-start"}"><div style="max-width:82%;padding:11px 14px;border-radius:${m.role==="user"?"18px 18px 4px 18px":"18px 18px 18px 4px"};background:${m.role==="user"?"#4c1d95":"#1e293b"};color:${m.role==="user"?"#ede9fe":"#e2e8f0"};font-size:14px;line-height:1.55;white-space:pre-wrap">${m.text.replace(/</g,"&lt;")}</div></div>`).join("");
+        const promptBtns = messages.filter(m=>m.role==="user").length===0 ? `<div style="display:flex;flex-wrap:wrap;gap:8px;margin-bottom:16px">${PROMPTS.map(p=>`<button onclick="sendPrompt('${p.replace(/'/g,"\\'")}') " style="background:#1e1b2e;border:1px solid #4c1d9522;border-radius:20px;color:#a78bfa;font-size:12px;padding:7px 13px;cursor:pointer;font-weight:500">${p}</button>`).join("")}</div>` : "";
+        const dotsHTML = aiLoading ? `<div style="display:flex;justify-content:flex-start"><div style="background:#1e293b;border-radius:18px 18px 18px 4px;padding:11px 16px"><div style="display:flex;gap:4px;align-items:center;padding:4px 0"><div class="dot-1" style="width:6px;height:6px;border-radius:50%;background:#6EE7C0"></div><div class="dot-2" style="width:6px;height:6px;border-radius:50%;background:#6EE7C0"></div><div class="dot-3" style="width:6px;height:6px;border-radius:50%;background:#6EE7C0"></div></div></div></div>` : "";
+        bodyHTML = `
+          <div style="display:flex;flex-direction:column;height:calc(100vh - 160px)">
+            <div style="margin-bottom:16px">
+              <div style="font-size:11px;font-weight:700;letter-spacing:0.1em;text-transform:uppercase;color:#a78bfa;margin-bottom:4px">AI Finance Advisor</div>
+              <div style="font-size:12px;color:#475569">Powered by Claude · end-to-end via secure proxy</div>
+            </div>
+            ${promptBtns}
+            ${aiError?`<div style="background:#2d0f0f;border:1px solid #F87171;border-radius:10px;padding:10px 14px;color:#F87171;font-size:12px;margin-bottom:12px">${aiError}</div>`:""}
+            <div id="chat-messages" style="flex:1;overflow-y:auto;display:flex;flex-direction:column;gap:12px;padding-bottom:12px">
+              ${msgHTML}${dotsHTML}
+            </div>
+            <div style="display:flex;gap:8px;padding-top:12px;border-top:1px solid #1e293b">
+              <input id="chat-input" placeholder="Ask about your finances…" value="${(chatInput||"").replace(/"/g,'&quot;')}" oninput="updateChatInput(this.value)" onkeydown="onChatKey(event)" style="flex:1;background:#1e293b;border:1px solid #2d1f5e;border-radius:10px;color:#f1f5f9;padding:12px 14px;font-size:14px;outline:none;box-sizing:border-box">
+              <button onclick="sendChat()" ${aiLoading?"disabled":""} style="padding:12px 16px;border-radius:10px;border:none;background:${aiLoading?"#1e293b":"#a78bfa"};color:${aiLoading?"#475569":"#0f172a"};font-weight:700;font-size:15px;cursor:${aiLoading?"default":"pointer"}">↑</button>
+            </div>
+          </div>`;
+
+        // scroll chat after render
+        setTimeout(()=>{ const el=document.getElementById("chat-messages"); if(el) el.scrollTop=el.scrollHeight; },50);
+      }
+
+      document.getElementById("root").innerHTML = `
+        <div style="background:#0f172a;min-height:100vh;max-width:480px;margin:0 auto">
+          <div style="padding:env(safe-area-inset-top,20px) 24px 0;background:#0f172a;position:sticky;top:0;z-index:10">
+            <div style="font-size:13px;font-weight:700;letter-spacing:0.15em;text-transform:uppercase;color:#6EE7C0;margin-bottom:2px;padding-top:8px">Ledge</div>
+            <div style="font-size:22px;font-weight:800;color:#f8fafc;letter-spacing:-0.03em;margin-bottom:20px">Your money, clear.</div>
+            <div style="display:flex;border-bottom:1px solid #1e293b">${navHTML}</div>
           </div>
-
-          <div style={s.body}>
-
-            {/* ── DASHBOARD ── */}
-            {view==="dashboard" && (<>
-              <div style={{...s.card, background:net>=0?"#0d2d22":"#2d0f0f", border:`1px solid ${net>=0?"#6EE7C044":"#F87171aa"}`}}>
-                <div style={s.lbl}>Net this period</div>
-                <div style={{fontSize:32, fontWeight:800, letterSpacing:"-0.04em", color:net>=0?"#6EE7C0":"#F87171"}}>{formatAUD(net)}</div>
-                <div style={{fontSize:12, color:"#64748b", marginTop:4}}>{net>=0?`${formatAUD(net)} ahead of spending`:`${formatAUD(Math.abs(net))} over income`}</div>
-              </div>
-              <div style={{display:"grid", gridTemplateColumns:"1fr 1fr", gap:12, marginBottom:14}}>
-                <div style={s.card}><div style={s.lbl}>Income</div><div style={{fontSize:22,fontWeight:800,color:"#6EE7C0",letterSpacing:"-0.03em"}}>{formatAUD(income)}</div></div>
-                <div style={s.card}><div style={s.lbl}>Spent</div><div style={{fontSize:22,fontWeight:800,color:"#F87171",letterSpacing:"-0.03em"}}>{formatAUD(expenses)}</div></div>
-              </div>
-              <div style={s.card}>
-                <div style={{display:"flex",justifyContent:"space-between",marginBottom:10}}>
-                  <div style={s.lbl}>7-day spending</div>
-                  <div style={{fontSize:11,color:"#64748b"}}>today →</div>
-                </div>
-                <SparkBar data={sparkData} max={Math.max(...sparkData,1)} />
-              </div>
-              {catBreakdown.length>0 && (
-                <div style={s.card}>
-                  <div style={{...s.lbl, marginBottom:14}}>Spending breakdown</div>
-                  <div style={{display:"flex",gap:16,alignItems:"center"}}>
-                    <DonutChart slices={catBreakdown} />
-                    <div style={{flex:1}}>
-                      {catBreakdown.slice(0,5).map(c=>(
-                        <div key={c.label} style={{display:"flex",justifyContent:"space-between",marginBottom:8}}>
-                          <div style={{display:"flex",alignItems:"center",gap:7}}>
-                            <div style={s.dot(c.color)}/>
-                            <span style={{fontSize:12,color:"#94a3b8"}}>{c.label}</span>
-                          </div>
-                          <span style={{fontSize:12,fontWeight:700,color:"#e2e8f0"}}>{formatAUD(c.value)}</span>
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-                </div>
-              )}
-              <div style={{...s.lbl,marginBottom:10,marginTop:4}}>Recent</div>
-              {sorted.slice(0,4).map(t=>(
-                <div key={t.id} style={s.tr}>
-                  <div style={s.dot(CAT_COLORS[t.category]||"#6B7280")}/>
-                  <div style={{flex:1}}>
-                    <div style={{fontSize:14,fontWeight:600,color:"#f1f5f9"}}>{t.desc}</div>
-                    <div style={{fontSize:11,color:"#64748b"}}>{t.category} · {t.date}</div>
-                  </div>
-                  <div style={{fontSize:15,fontWeight:700,color:t.type==="income"?"#6EE7C0":"#F87171"}}>
-                    {t.type==="income"?"+":"-"}{formatAUD(t.amount)}
-                  </div>
-                </div>
-              ))}
-            </>)}
-
-            {/* ── TRANSACTIONS ── */}
-            {view==="transactions" && (<>
-              <div style={{display:"flex",gap:8,marginBottom:16}}>
-                {["all","income","expense"].map(f=>(
-                  <button key={f} style={s.chip(filter===f)} onClick={()=>setFilter(f)}>{f.charAt(0).toUpperCase()+f.slice(1)}</button>
-                ))}
-              </div>
-              {filteredTxns.length===0 && <div style={{textAlign:"center",color:"#475569",paddingTop:48,fontSize:14}}>No transactions yet. Add one →</div>}
-              {filteredTxns.map(t=>(
-                <div key={t.id} style={s.tr}>
-                  <div style={s.dot(CAT_COLORS[t.category]||"#6B7280")}/>
-                  <div style={{flex:1}}>
-                    <div style={{fontSize:14,fontWeight:600,color:"#f1f5f9"}}>{t.desc}</div>
-                    <div style={{display:"flex",gap:6,marginTop:2}}>
-                      <span style={s.pill(CAT_COLORS[t.category]||"#6B7280")}>{t.category}</span>
-                      <span style={{fontSize:11,color:"#475569"}}>{t.date}</span>
-                    </div>
-                  </div>
-                  <div style={{textAlign:"right"}}>
-                    <div style={{fontSize:15,fontWeight:700,color:t.type==="income"?"#6EE7C0":"#F87171"}}>
-                      {t.type==="income"?"+":"-"}{formatAUD(t.amount)}
-                    </div>
-                    <button onClick={()=>deleteTxn(t.id)} style={{background:"none",border:"none",color:"#334155",cursor:"pointer",fontSize:12,padding:0,marginTop:2}}>remove</button>
-                  </div>
-                </div>
-              ))}
-            </>)}
-
-            {/* ── ADD ── */}
-            {view==="add" && (<>
-              <div style={{...s.lbl,marginBottom:14}}>Log a transaction</div>
-              <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10,marginBottom:16}}>
-                {["expense","income"].map(t=>(
-                  <button key={t} onClick={()=>setForm(f=>({...f,type:t,category:t==="income"?"Salary":"Food"}))}
-                    style={{padding:"12px",borderRadius:12,border:`2px solid ${form.type===t?(t==="income"?"#6EE7C0":"#F87171"):"#334155"}`,background:form.type===t?(t==="income"?"#6EE7C022":"#F8717122"):"#1e293b",color:form.type===t?(t==="income"?"#6EE7C0":"#F87171"):"#64748b",fontWeight:700,fontSize:14,cursor:"pointer",textTransform:"capitalize"}}>
-                    {t}
-                  </button>
-                ))}
-              </div>
-              <input type="date" value={form.date} onChange={e=>setForm(f=>({...f,date:e.target.value}))} style={s.inp}/>
-              <select value={form.category} onChange={e=>setForm(f=>({...f,category:e.target.value}))} style={s.sel}>
-                {CATEGORIES[form.type].map(c=><option key={c}>{c}</option>)}
-              </select>
-              <input placeholder="Description" value={form.desc} onChange={e=>setForm(f=>({...f,desc:e.target.value}))} style={s.inp}/>
-              <input type="number" placeholder="Amount (AUD)" value={form.amount} onChange={e=>setForm(f=>({...f,amount:e.target.value}))} style={s.inp} min="0" step="0.01"/>
-              <button style={s.btn()} onClick={addTxn}>Save transaction</button>
-              <button style={s.btn("#1e293b","#94a3b8")} onClick={()=>setView("dashboard")}>Cancel</button>
-            </>)}
-
-            {/* ── IMPORT ── */}
-            {view==="import" && (<>
-              {importStage==="idle" && (<>
-                <div style={{...s.lbl,color:"#38bdf8"}}>Import transactions</div>
-                <div style={{fontSize:12,color:"#475569",marginBottom:20}}>Accepts .xlsx, .xls, or .csv</div>
-                <div onClick={()=>fileInputRef.current?.click()}
-                  onDragOver={e=>e.preventDefault()}
-                  onDrop={e=>{ e.preventDefault(); const f=e.dataTransfer.files[0]; if(f){const inp=fileInputRef.current;const dt=new DataTransfer();dt.items.add(f);inp.files=dt.files;handleFile({target:inp});} }}
-                  style={{border:"2px dashed #334155",borderRadius:16,padding:"40px 24px",textAlign:"center",cursor:"pointer",marginBottom:16}}>
-                  <div style={{fontSize:32,marginBottom:10}}>📂</div>
-                  <div style={{fontWeight:700,color:"#e2e8f0",marginBottom:6}}>Tap to choose a file</div>
-                  <div style={{fontSize:12,color:"#475569"}}>or drag and drop here</div>
-                  <input ref={fileInputRef} type="file" accept=".xlsx,.xls,.csv" style={{display:"none"}} onChange={handleFile}/>
-                </div>
-                {importError && <div style={{background:"#2d0f0f",border:"1px solid #F87171",borderRadius:12,padding:"12px 16px",color:"#F87171",fontSize:13,marginBottom:16}}>{importError}</div>}
-                <div style={s.card}>
-                  <div style={{...s.lbl,marginBottom:10}}>Expected columns</div>
-                  <div style={{display:"flex",flexWrap:"wrap",gap:6,marginBottom:10}}>
-                    {["date","amount","description","category","type"].map(c=>(
-                      <span key={c} style={{background:"#0f172a",borderRadius:6,padding:"3px 10px",fontSize:11,color:"#38bdf8",fontFamily:"monospace"}}>{c}</span>
-                    ))}
-                  </div>
-                  <div style={{fontSize:12,color:"#475569",lineHeight:1.7}}>Column names are flexible. Missing category/type columns are auto-guessed. ANZ, CBA, NAB, and Westpac CSV exports typically work out of the box.</div>
-                </div>
-                <div style={{...s.lbl,marginBottom:10,marginTop:4}}>Import mode</div>
-                <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10}}>
-                  {[["append","Add to existing"],["replace","Replace all"]].map(([val,label])=>(
-                    <button key={val} onClick={()=>setImportMode(val)}
-                      style={{padding:"12px",borderRadius:12,border:`2px solid ${importMode===val?"#38bdf8":"#334155"}`,background:importMode===val?"#0c2a3a":"#1e293b",color:importMode===val?"#38bdf8":"#64748b",fontWeight:700,fontSize:13,cursor:"pointer"}}>
-                      {label}
-                    </button>
-                  ))}
-                </div>
-              </>)}
-
-              {importStage==="preview" && (<>
-                <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:4}}>
-                  <div style={{...s.lbl,color:"#38bdf8"}}>Preview — {importRows.length} rows</div>
-                  <button onClick={resetImport} style={{background:"none",border:"none",color:"#475569",fontSize:12,cursor:"pointer"}}>← back</button>
-                </div>
-                <div style={{fontSize:12,color:"#475569",marginBottom:16}}>Edit anything before confirming.</div>
-                {importRows.map((_,idx)=>{
-                  const r=getRow(idx);
-                  return (
-                    <div key={idx} style={{background:"#1e293b",borderRadius:12,padding:"12px 14px",marginBottom:10}}>
-                      <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8,marginBottom:8}}>
-                        <div><div style={{fontSize:10,color:"#64748b",marginBottom:3}}>DATE</div><input value={r.date} onChange={e=>updateEdit(idx,"date",e.target.value)} style={s.mini}/></div>
-                        <div><div style={{fontSize:10,color:"#64748b",marginBottom:3}}>AMOUNT</div><input type="number" value={r.amount} onChange={e=>updateEdit(idx,"amount",parseFloat(e.target.value)||0)} style={s.mini}/></div>
-                      </div>
-                      <div style={{marginBottom:8}}><div style={{fontSize:10,color:"#64748b",marginBottom:3}}>DESCRIPTION</div><input value={r.desc} onChange={e=>updateEdit(idx,"desc",e.target.value)} style={s.mini}/></div>
-                      <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8}}>
-                        <div><div style={{fontSize:10,color:"#64748b",marginBottom:3}}>CATEGORY</div>
-                          <select value={r.category} onChange={e=>updateEdit(idx,"category",e.target.value)} style={s.mini}>
-                            {ALL_CATS.map(c=><option key={c}>{c}</option>)}
-                          </select>
-                        </div>
-                        <div><div style={{fontSize:10,color:"#64748b",marginBottom:3}}>TYPE</div>
-                          <select value={r.type} onChange={e=>updateEdit(idx,"type",e.target.value)} style={s.mini}>
-                            <option value="expense">Expense</option>
-                            <option value="income">Income</option>
-                          </select>
-                        </div>
-                      </div>
-                    </div>
-                  );
-                })}
-                <button style={s.btn("#38bdf8")} onClick={confirmImport}>Confirm — import {importRows.length} transactions</button>
-                <button style={s.btn("#1e293b","#94a3b8")} onClick={resetImport}>Cancel</button>
-              </>)}
-
-              {importStage==="done" && (
-                <div style={{textAlign:"center",paddingTop:40}}>
-                  <div style={{fontSize:48,marginBottom:16}}>✓</div>
-                  <div style={{fontWeight:800,fontSize:20,color:"#e2e8f0",marginBottom:8}}>Import complete</div>
-                  <div style={{fontSize:14,color:"#64748b",marginBottom:32}}>Your transactions have been updated.</div>
-                  <button style={{...s.btn("#38bdf8"),width:"auto",padding:"12px 28px"}} onClick={()=>setView("dashboard")}>Go to overview</button>
-                </div>
-              )}
-            </>)}
-
-            {/* ── ASK AI ── */}
-            {view==="ask" && (
-              <div style={{display:"flex",flexDirection:"column",height:"calc(100vh - 160px)"}}>
-                <div style={{marginBottom:16}}>
-                  <div style={{...s.lbl,color:"#a78bfa"}}>AI Finance Advisor</div>
-                  <div style={{fontSize:12,color:"#475569"}}>Powered by Claude · end-to-end via secure proxy</div>
-                </div>
-                {messages.filter(m=>m.role==="user").length===0 && (
-                  <div style={{display:"flex",flexWrap:"wrap",gap:8,marginBottom:16}}>
-                    {PROMPTS.map(p=>(
-                      <button key={p} onClick={()=>sendMessage(p)} style={{background:"#1e1b2e",border:"1px solid #4c1d9522",borderRadius:20,color:"#a78bfa",fontSize:12,padding:"7px 13px",cursor:"pointer",fontWeight:500}}>{p}</button>
-                    ))}
-                  </div>
-                )}
-                {aiError && <div style={{background:"#2d0f0f",border:"1px solid #F87171",borderRadius:10,padding:"10px 14px",color:"#F87171",fontSize:12,marginBottom:12}}>{aiError}</div>}
-                <div style={{flex:1,overflowY:"auto",display:"flex",flexDirection:"column",gap:12,paddingBottom:12}}>
-                  {messages.map((m,i)=>(
-                    <div key={i} style={{display:"flex",justifyContent:m.role==="user"?"flex-end":"flex-start"}}>
-                      <div style={{maxWidth:"82%",padding:"11px 14px",borderRadius:m.role==="user"?"18px 18px 4px 18px":"18px 18px 18px 4px",background:m.role==="user"?"#4c1d95":"#1e293b",color:m.role==="user"?"#ede9fe":"#e2e8f0",fontSize:14,lineHeight:1.55,whiteSpace:"pre-wrap"}}>
-                        {m.text}
-                      </div>
-                    </div>
-                  ))}
-                  {aiLoading && (
-                    <div style={{display:"flex",justifyContent:"flex-start"}}>
-                      <div style={{background:"#1e293b",borderRadius:"18px 18px 18px 4px",padding:"11px 16px"}}><TypingDots/></div>
-                    </div>
-                  )}
-                  <div ref={chatEndRef}/>
-                </div>
-                <div style={{display:"flex",gap:8,paddingTop:12,borderTop:"1px solid #1e293b"}}>
-                  <input placeholder="Ask about your finances…" value={chatInput} onChange={e=>setChatInput(e.target.value)}
-                    onKeyDown={e=>e.key==="Enter"&&!e.shiftKey&&sendMessage()}
-                    style={{...s.inp,marginBottom:0,flex:1,fontSize:14,borderColor:"#2d1f5e"}}/>
-                  <button onClick={()=>sendMessage()} disabled={aiLoading||!chatInput.trim()}
-                    style={{padding:"12px 16px",borderRadius:10,border:"none",background:aiLoading||!chatInput.trim()?"#1e293b":"#a78bfa",color:aiLoading||!chatInput.trim()?"#475569":"#0f172a",fontWeight:700,fontSize:15,cursor:aiLoading||!chatInput.trim()?"default":"pointer"}}>
-                    ↑
-                  </button>
-                </div>
-              </div>
-            )}
-
-          </div>
-        </div>
-      );
+          <div style="padding:20px 24px 100px">${bodyHTML}</div>
+        </div>`;
     }
 
-    ReactDOM.createRoot(document.getElementById("root")).render(<App/>);
-  </script>
+    // ── boot ──────────────────────────────────────────────────────────────────
+    render();
 
-  <script>
     if ("serviceWorker" in navigator) {
-      window.addEventListener("load", () => {
-        navigator.serviceWorker.register("/ledge/sw.js")
-          .catch(e => console.warn("SW failed:", e));
+      window.addEventListener("load", ()=>{
+        navigator.serviceWorker.register("/ledge/sw.js").catch(e=>console.warn("SW failed:",e));
       });
     }
   </script>
